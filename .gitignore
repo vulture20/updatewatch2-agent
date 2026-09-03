@@ -14,3 +14,8 @@ config.local.*
 # Logs
 logs/
 *.log
+
+# .NET build output
+bin/
+obj/
+*.user
