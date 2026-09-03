@@ -5,6 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-UpdateWatch2.Agent-d4d3427f-7dd8-4ee6-9e1b-d9d4c9767ff5</UserSecretsId>
+    <!-- Embedded into the compiled Windows binary (Explorer, Task Manager,
+         services.msc, etc.); ignored on non-Windows builds. Same source as
+         installer/nsis/icon.ico — see logos/ at the workspace root and
+         CLAUDE.md for how to regenerate both. -->
+    <ApplicationIcon>icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
