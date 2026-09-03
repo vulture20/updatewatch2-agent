@@ -1,0 +1,12 @@
+; UpdateWatch2 Agent — NSIS setup template (placeholder)
+;
+; Intended to accept install-time parameters and persist them into the
+; Windows registry (see src/platform/windows/registry/):
+;   - server address
+;   - server port
+;   - other required configuration data
+;
+; Uninstall must remove all registry keys created by the agent, without
+; leaving residue.
+;
+; Not yet implemented — see project CLAUDE.md for the full requirements.
