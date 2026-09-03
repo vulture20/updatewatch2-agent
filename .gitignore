@@ -1,0 +1,16 @@
+# Secrets & certificates — never commit
+certs/
+*.pfx
+*.pem
+*.key
+*.crt
+*.p12
+
+# Local config / registry exports
+*.reg
+config.local.*
+!config.example.*
+
+# Logs
+logs/
+*.log
