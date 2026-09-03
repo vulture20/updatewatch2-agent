@@ -10,3 +10,8 @@
 ; leaving residue.
 ;
 ; Not yet implemented — see project CLAUDE.md for the full requirements.
+
+; Installer/uninstaller executable icon and MUI wizard-page icon —
+; already a real asset (see icon.ico, generated from /opt/UpdateWatch2/claude/logos).
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
