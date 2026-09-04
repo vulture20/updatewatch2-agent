@@ -1,0 +1,155 @@
+name: Release
+
+# Tag-triggered, mirroring updatewatch2-server's docker-publish.yml
+# (push to a "v*.*.*" tag). workflow_dispatch runs the same build+package
+# pipeline without publishing anything — useful to validate the installer
+# scripts before actually cutting a tag; the `release` job below only runs
+# for a real tag push (see its `if:`).
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet test
+
+  # Cross-published from Linux — makensis runs fine on Linux, and
+  # `dotnet publish -r win-x64` needs no Windows host, so this avoids a
+  # (slower, pricier) windows-latest runner entirely.
+  windows-installer:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Read app version
+        id: version
+        run: echo "value=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish self-contained win-x64
+        run: >
+          dotnet publish src/UpdateWatch2.Agent -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/win-x64
+
+      - name: Install NSIS
+        run: sudo apt-get update && sudo apt-get install -y nsis
+
+      - name: Build installer
+        working-directory: installer/nsis
+        run: makensis -DVERSION=${{ steps.version.outputs.value }} setup.nsi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: installer/nsis/UpdateWatch2Agent-Setup-*.exe
+          if-no-files-found: error
+
+  # "optional" per CLAUDE.md's own framing of the Linux agent (planned as a
+  # later addition, behind Windows) — continue-on-error so a Linux
+  # packaging problem never blocks the Windows release the way a failure
+  # in the windows-installer job (no continue-on-error there) does.
+  linux-packages:
+    needs: test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Read app version
+        id: version
+        run: echo "value=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish self-contained linux-x64
+        run: >
+          dotnet publish src/UpdateWatch2.Agent -c Release -r linux-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/linux-x64
+
+      - name: Stage package contents
+        run: |
+          mkdir -p staging/opt/updatewatch2-agent
+          cp publish/linux-x64/UpdateWatch2.Agent staging/opt/updatewatch2-agent/
+          chmod 755 staging/opt/updatewatch2-agent/UpdateWatch2.Agent
+
+      - name: Install fpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev rpm build-essential
+          sudo gem install --no-document fpm
+
+      - name: Build .deb and .rpm
+        run: |
+          mkdir -p dist
+          for pkg_type in deb rpm; do
+            fpm -s dir -t "$pkg_type" \
+              -n updatewatch2-agent \
+              -v "${{ steps.version.outputs.value }}" \
+              --license AGPL-3.0-or-later \
+              --vendor "Thorsten Schröpel" \
+              --maintainer "Thorsten Schröpel" \
+              --description "UpdateWatch2 Agent - centrally managed Windows/Linux update agent" \
+              --url "https://github.com/${{ github.repository }}" \
+              --architecture amd64 \
+              --after-install installer/linux/postinst.sh \
+              --before-remove installer/linux/prerm.sh \
+              --after-remove installer/linux/postrm.sh \
+              $([ "$pkg_type" = deb ] && echo --deb-no-default-config-files) \
+              -p dist/ \
+              staging/opt/updatewatch2-agent/=/opt/updatewatch2-agent/ \
+              installer/linux/updatewatch2-agent.service=/lib/systemd/system/updatewatch2-agent.service
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+          if-no-files-found: error
+
+  release:
+    needs: [windows-installer, linux-packages]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist
+
+      # linux-packages runs with continue-on-error: true — its artifact may
+      # legitimately not exist if that job failed, so this download must
+      # not fail the release over it.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: linux-packages
+          path: dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: false
+          generate_release_notes: true

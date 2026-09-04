@@ -12,6 +12,13 @@ A .NET Worker Service, targeting both Windows and Linux from one codebase, that 
 
 See the project CLAUDE.md for the full architectural briefing, module layout, and configurable-behavior contract, and this repo's own open issues for what's still outstanding.
 
+## Installation
+
+Every tagged release (`.github/workflows/release.yml`, triggered on a `vX.Y.Z` push) builds and publishes installable packages as GitHub Release assets:
+
+- **Windows** — `UpdateWatch2Agent-Setup-<version>-x64.exe`, an NSIS installer (`installer/nsis/setup.nsi`). Installs the agent as the `UpdateWatch2 Agent` Windows service, asks for the server address/port (or accepts them unattended via `/S /SERVERADDRESS=... /SERVERPORT=...`), and writes them to `HKLM\SOFTWARE\UpdateWatch2\Agent`. The uninstaller removes the service, install directory, registry key, and (best-effort) this agent's own client certificate from the machine store.
+- **Linux** (`.deb`/`.rpm`, x86_64) — installs to `/opt/updatewatch2-agent/`, ships a systemd unit (`updatewatch2-agent.service`, disabled-but-enabled and not started by default until a server address is configured), and seeds a starter `/etc/updatewatch2/agent.conf` if one doesn't already exist. Built with [`fpm`](https://fpm.readthedocs.io/); this platform is newer/less battle-tested than the Windows installer, per this project's "Linux agent planned as a later addition" status (see CLAUDE.md).
+
 Companion repository: `updatewatch2-server`.
 
 ## License

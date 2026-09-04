@@ -1,0 +1,54 @@
+#!/bin/sh
+# fpm --after-install hook (deb postinst / rpm %post — same script, both
+# package types). Never fails the package install/upgrade over anything
+# non-essential here: only `set -e` around the steps that must succeed.
+set -e
+
+CONFIG_DIR=/etc/updatewatch2
+CONFIG_FILE="$CONFIG_DIR/agent.conf"
+
+# LinuxFileConfigStore.Save() only ever runs once this agent has
+# successfully registered with a server (see RegistrationWorker), so
+# without a ServerAddress configured there is otherwise no config file at
+# all to point an admin at. Write a starter one here instead — same JSON
+# shape and same default values AgentOptions itself declares (so this is
+# purely for discoverability, not a second source of truth) — but only if
+# nothing is there yet, so a reinstall/upgrade never clobbers an
+# already-configured agent.
+if [ ! -e "$CONFIG_FILE" ]; then
+    mkdir -p "$CONFIG_DIR"
+    cat > "$CONFIG_FILE" <<'EOF'
+{
+  "ServerAddress": "",
+  "ServerPort": 8443,
+  "UpdateCheckIntervalMinutes": 240,
+  "UpdateCheckJitterSeconds": 300,
+  "AliveIntervalMinutes": 5,
+  "LogLevel": "INFO",
+  "RegistrationRetryIntervalSeconds": 30,
+  "RegistrationToken": null,
+  "ClientCertificateThumbprint": null,
+  "CertificateRenewalLeadTimeDays": 60,
+  "CertificateMaintenanceIntervalSeconds": 900
+}
+EOF
+    # Matches the restriction LinuxFileConfigStore.Save() itself applies —
+    # this file can carry a RegistrationToken bearer secret later.
+    chmod 600 "$CONFIG_FILE"
+    chown root:root "$CONFIG_FILE"
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+    systemctl enable updatewatch2-agent.service || true
+fi
+
+cat <<'EOF'
+UpdateWatch2 Agent installed but not started: it has no server to talk to
+yet. Set "ServerAddress" (and "ServerPort" if not 8443) in
+/etc/updatewatch2/agent.conf, then:
+
+    systemctl start updatewatch2-agent
+EOF
+
+exit 0

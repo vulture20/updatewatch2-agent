@@ -1,0 +1,25 @@
+[Unit]
+Description=UpdateWatch2 Agent
+Documentation=https://github.com/vulture20/updatewatch2-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Not Type=notify: Program.cs's AddSystemd() wires up the generic-host
+# integration (SIGTERM handling, journal-friendly console logging) but this
+# codebase never resolves ISystemdNotifier to send READY=1, so Type=notify
+# would just sit waiting for a signal that never comes and time out.
+Type=simple
+ExecStart=/opt/updatewatch2-agent/UpdateWatch2.Agent
+Restart=on-failure
+RestartSec=10s
+
+# Runs as root: needed to eventually drive the system package manager for
+# update installation (this repo's Windows-Update-API parity goal — see
+# CLAUDE.md), and LinuxFileConfigStore/LinuxClientCertificateStore already
+# write their files under /etc/updatewatch2 as owner(root)-only.
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

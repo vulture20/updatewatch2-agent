@@ -19,3 +19,9 @@ logs/
 bin/
 obj/
 *.user
+
+# Local release-packaging output (see .github/workflows/release.yml) —
+# `dotnet publish` output and the installer packages built from it
+publish/
+dist/
+installer/nsis/*.exe

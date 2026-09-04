@@ -9,7 +9,7 @@ namespace UpdateWatch2.Agent.Configuration.Windows;
 /// Reads/writes agent configuration under
 /// <c>HKEY_LOCAL_MACHINE\SOFTWARE\UpdateWatch2\Agent</c>. Values are
 /// normally written once by the NSIS installer (see
-/// installer/nsis/setup.nsi.template); <see cref="Save"/> is provided for
+/// installer/nsis/setup.nsi); <see cref="Save"/> is provided for
 /// completeness and for values the running service updates itself (e.g. a
 /// log level pushed from the server — not implemented yet).
 ///
