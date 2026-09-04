@@ -27,4 +27,7 @@ public static class AgentApiRoutes
     public static string Alive(string hostname) => $"/api/agents/{Uri.EscapeDataString(hostname)}/alive";
 
     public static string ReportUpdates(string hostname) => $"/api/agents/{Uri.EscapeDataString(hostname)}/updates";
+
+    /// <summary>Fresh-certificate-before-expiry (updatewatch2-server#7) — authenticated by the current client certificate, not a token.</summary>
+    public static string Renew(string hostname) => $"/api/agents/{Uri.EscapeDataString(hostname)}/renew";
 }

@@ -50,6 +50,19 @@ public class LinuxClientCertificateStoreTests : IDisposable
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
     }
 
+    [Fact]
+    public void Delete_is_a_no_op_and_leaves_the_stored_certificate_untouched()
+    {
+        var store = new LinuxClientCertificateStore(_path);
+        store.Save(CreateThrowawayCertificate("delete-noop-test"));
+
+        store.Delete("any-thumbprint-whatsoever");
+
+        var loaded = store.Load();
+        Assert.NotNull(loaded);
+        Assert.Equal("CN=delete-noop-test", loaded.Subject);
+    }
+
     private static byte[] CreateThrowawayCertificate(string subjectCn)
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);

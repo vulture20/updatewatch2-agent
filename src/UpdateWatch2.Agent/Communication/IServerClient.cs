@@ -23,4 +23,15 @@ public interface IServerClient
 
     /// <summary>Fetches the server's four version numbers. Anonymous; no cert needed — used for protocol-compatibility detection (updatewatch2-server#3).</summary>
     Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Requests a fresh client certificate before the current one expires
+    /// (updatewatch2-server#7) — authenticated by the CURRENT still-valid
+    /// certificate, not a token. Must be called on the shared, cert-attached
+    /// <see cref="IServerClient"/> (see HeartbeatWorker), never a bootstrap
+    /// one — same connection-pooling reasoning as RegistrationWorker's
+    /// class-level remarks: SslOptions is only consulted when a NEW TLS
+    /// connection is negotiated.
+    /// </summary>
+    Task<RenewCertificateResult> RenewCertificateAsync(CancellationToken ct = default);
 }

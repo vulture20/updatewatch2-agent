@@ -93,6 +93,15 @@ builder.Services.AddSingleton(sp =>
             ClientCertificates = [],
             RemoteCertificateValidationCallback = (_, certificate, _, _) => validator.Validate(certificate),
         },
+        // The server re-validates the presented client certificate on
+        // every request, not just once per TLS handshake (no certificate
+        // cache configured server-side). After HeartbeatWorker hot-swaps a
+        // renewed/reissued certificate into SslOptions.ClientCertificates,
+        // an already-open pooled connection keeps presenting whatever cert
+        // was live when it was negotiated — bounding how long a stale
+        // connection can stay pooled keeps that window small instead of
+        // relying on SocketsHttpHandler's (longer) default idle timeout.
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
     };
 });
 

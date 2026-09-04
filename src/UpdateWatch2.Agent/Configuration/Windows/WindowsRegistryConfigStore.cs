@@ -41,6 +41,8 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
             RegistrationRetryIntervalSeconds = ReadInt(key, nameof(AgentOptions.RegistrationRetryIntervalSeconds), 30),
             RegistrationToken = (string?)key.GetValue(nameof(AgentOptions.RegistrationToken)),
             ClientCertificateThumbprint = (string?)key.GetValue(nameof(AgentOptions.ClientCertificateThumbprint)),
+            CertificateRenewalLeadTimeDays = ReadInt(key, nameof(AgentOptions.CertificateRenewalLeadTimeDays), 60),
+            CertificateMaintenanceIntervalSeconds = ReadInt(key, nameof(AgentOptions.CertificateMaintenanceIntervalSeconds), 900),
         };
     }
 
@@ -60,6 +62,8 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
         // accurate for "never set" vs. "explicitly empty".
         SetOrDeleteString(key, nameof(AgentOptions.RegistrationToken), options.RegistrationToken);
         SetOrDeleteString(key, nameof(AgentOptions.ClientCertificateThumbprint), options.ClientCertificateThumbprint);
+        key.SetValue(nameof(AgentOptions.CertificateRenewalLeadTimeDays), options.CertificateRenewalLeadTimeDays, RegistryValueKind.DWord);
+        key.SetValue(nameof(AgentOptions.CertificateMaintenanceIntervalSeconds), options.CertificateMaintenanceIntervalSeconds, RegistryValueKind.DWord);
     }
 
     private static void SetOrDeleteString(RegistryKey key, string name, string? value)

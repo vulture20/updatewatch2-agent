@@ -58,4 +58,19 @@ public class WindowsClientCertificateStore(IAgentConfigStore configStore, AgentO
         options.ClientCertificateThumbprint = certificate.GetCertHashString(HashAlgorithmName.SHA256);
         configStore.Save(options);
     }
+
+    public void Delete(string thumbprintSha256)
+    {
+        using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
+        store.Open(OpenFlags.ReadWrite);
+
+        // Same SHA-256-not-legacy-Thumbprint reasoning as Load() above.
+        foreach (var candidate in store.Certificates)
+        {
+            if (string.Equals(candidate.GetCertHashString(HashAlgorithmName.SHA256), thumbprintSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                store.Remove(candidate);
+            }
+        }
+    }
 }

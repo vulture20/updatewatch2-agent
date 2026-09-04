@@ -58,4 +58,24 @@ public class AgentOptions
     /// instead, so this field is unused there.
     /// </summary>
     public string? ClientCertificateThumbprint { get; set; }
+
+    /// <summary>
+    /// How long before its client certificate's NotAfter this agent
+    /// proactively requests renewal (updatewatch2-server#7). Checked
+    /// against the certificate's own NotAfter, which this agent already
+    /// holds locally — deliberately not a value the server sends back, to
+    /// avoid a protocol/DTO change just for this.
+    /// </summary>
+    public int CertificateRenewalLeadTimeDays { get; set; } = 60;
+
+    /// <summary>
+    /// How often <see cref="UpdateWatch2.Agent.RegistrationWorker"/>'s persistent maintenance
+    /// loop re-checks its local certificate once one is already attached
+    /// (updatewatch2-agent#3) — deliberately coarser than
+    /// <see cref="RegistrationRetryIntervalSeconds"/>, which stays reserved
+    /// for actively onboarding/recovering, not steady-state idling. In
+    /// seconds, not minutes (unlike most of this class' other intervals),
+    /// so a short value is representable for tests without a whole-minute floor.
+    /// </summary>
+    public int CertificateMaintenanceIntervalSeconds { get; set; } = 900;
 }

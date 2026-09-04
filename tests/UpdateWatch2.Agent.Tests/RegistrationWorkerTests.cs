@@ -32,7 +32,7 @@ public class RegistrationWorkerTests : IDisposable
             new AgentOptions(), new FakeAgentConfigStore(), new FileCaTrustStore(_caPath), certificateStore,
             handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
 
-        await RunToCompletionAsync(worker);
+        await RunUntilReadyAsync(worker, certificateState);
 
         Assert.Equal(0, serverClient.FetchCaCertificateCallCount);
         Assert.Equal(0, serverClient.RegisterCallCount);
@@ -67,7 +67,7 @@ public class RegistrationWorkerTests : IDisposable
             options, configStore, new FileCaTrustStore(_caPath), certificateStore,
             handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
 
-        await RunToCompletionAsync(worker, timeout: TimeSpan.FromSeconds(5));
+        await RunUntilReadyAsync(worker, certificateState, timeout: TimeSpan.FromSeconds(5));
 
         Assert.Equal(1, serverClient.FetchCaCertificateCallCount);
         Assert.NotNull(new FileCaTrustStore(_caPath).Load());
@@ -78,24 +78,95 @@ public class RegistrationWorkerTests : IDisposable
         Assert.Single(handler.SslOptions.ClientCertificates!);
     }
 
-    private static async Task RunToCompletionAsync(RegistrationWorker worker, TimeSpan? timeout = null)
+    [Fact]
+    public async Task A_certificate_lost_after_successful_attachment_is_recovered_without_a_restart()
     {
+        // This is the direct proof of "live, no restart" (updatewatch2-server#8):
+        // the worker starts already certified, the local certificate then
+        // disappears out from under it (simulating a wipe/corruption) while
+        // the SAME worker instance keeps running, and a fresh token shows
+        // up in the config store the way an admin's re-issuance would place
+        // one — no new worker/process is ever started in this test.
+        var originalCertificate = CreateThrowawayCertificate("lost-host");
+        var certificateStore = new FakeClientCertificateStore(existing: originalCertificate);
+        var configStore = new FakeAgentConfigStore();
+        var options = new AgentOptions { CertificateMaintenanceIntervalSeconds = 1, RegistrationRetryIntervalSeconds = 1 };
+        var certificateState = new AgentCertificateState();
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } };
+
+        var recoveredCertificate = CreateThrowawayCertificate("lost-host-recovered");
+        var recoveredPfxBase64 = Convert.ToBase64String(recoveredCertificate.Export(X509ContentType.Pfx));
+        var serverClient = new FakeServerClient(onRegister: token =>
+            token == "reissued-token"
+                ? new RegisterResult(Approved: true, RegistrationToken: null, Certificate: recoveredPfxBase64, ProtocolVersion: "0.1.0")
+                : new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: "0.1.0"));
+
+        var worker = new RegistrationWorker(
+            options, configStore, new FileCaTrustStore(_caPath), certificateStore,
+            handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
+
         await worker.StartAsync(CancellationToken.None);
-        var executeTask = GetExecuteTask(worker);
-        await executeTask!.WaitAsync(timeout ?? TimeSpan.FromSeconds(2));
-        await worker.StopAsync(CancellationToken.None);
+        try
+        {
+            // First reach the idle, already-certified steady state.
+            await certificateState.WaitUntilReadyAsync(TimeoutToken());
+
+            // Simulate the certificate being lost, and an admin's
+            // re-issuance token showing up in the config store — all while
+            // this worker instance keeps running, never restarted.
+            certificateStore.SimulateLoss();
+            configStore.ToReturn = new AgentOptions { RegistrationToken = "reissued-token" };
+
+            // Wait for the worker's own maintenance loop to notice, recover,
+            // and re-attach — polling rather than a single wait, since
+            // certificateState.IsReady is already true and won't transition
+            // again.
+            await WaitUntilAsync(() => certificateStore.Saved is not null && ReferenceEquals(certificateStore.Saved, certificateStore.Load()),
+                TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+
+        Assert.NotNull(certificateStore.Saved);
+        Assert.Equal(
+            recoveredCertificate.GetCertHashString(HashAlgorithmName.SHA256),
+            certificateStore.Saved!.GetCertHashString(HashAlgorithmName.SHA256));
+        Assert.Single(handler.SslOptions.ClientCertificates!);
+        var reattached = Assert.IsType<X509Certificate2>(handler.SslOptions.ClientCertificates![0]);
+        Assert.Equal(recoveredCertificate.GetCertHashString(HashAlgorithmName.SHA256), reattached.GetCertHashString(HashAlgorithmName.SHA256));
     }
 
-    // BackgroundService doesn't expose ExecuteTask's completion in a way
-    // StartAsync's returned Task reflects (StartAsync returns once
-    // ExecuteAsync starts, not once it finishes) — reach the protected
-    // ExecuteTask property via reflection rather than polling
-    // IAgentCertificateState, so a failed/faulted run still surfaces here
-    // instead of hanging until the timeout.
-    private static Task? GetExecuteTask(Microsoft.Extensions.Hosting.BackgroundService worker) =>
-        (Task?)typeof(Microsoft.Extensions.Hosting.BackgroundService)
-            .GetProperty("ExecuteTask")!
-            .GetValue(worker);
+    private static CancellationToken TimeoutToken(TimeSpan? timeout = null) =>
+        new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(5)).Token;
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("Condition was not met within the timeout.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+    }
+
+    private static async Task RunUntilReadyAsync(RegistrationWorker worker, AgentCertificateState certificateState, TimeSpan? timeout = null)
+    {
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await certificateState.WaitUntilReadyAsync(TimeoutToken(timeout));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
 
     private static X509Certificate2 CreateThrowawayCertificate(string subjectCn)
     {
@@ -107,7 +178,15 @@ public class RegistrationWorkerTests : IDisposable
 
     private class FakeAgentConfigStore : IAgentConfigStore
     {
-        public AgentOptions Load() => new();
+        /// <summary>
+        /// What the NEXT <see cref="Load"/> call returns — settable
+        /// mid-test to simulate an admin writing a fresh registration
+        /// token into the real config file/registry while the worker's
+        /// maintenance loop keeps polling it.
+        /// </summary>
+        public AgentOptions ToReturn { get; set; } = new();
+
+        public AgentOptions Load() => ToReturn;
 
         public void Save(AgentOptions options)
         {
@@ -121,9 +200,16 @@ public class RegistrationWorkerTests : IDisposable
     {
         public X509Certificate2? Saved { get; private set; } = existing;
 
+        public List<string> DeletedThumbprints { get; } = [];
+
         public X509Certificate2? Load() => Saved;
 
         public void Save(byte[] pfxBytes) => Saved = X509CertificateLoader.LoadPkcs12(pfxBytes, password: null);
+
+        public void Delete(string thumbprintSha256) => DeletedThumbprints.Add(thumbprintSha256);
+
+        /// <summary>Test-only: simulates the certificate disappearing out from under a running process (wipe, corruption).</summary>
+        public void SimulateLoss() => Saved = null;
     }
 
     private class FakeServerClient(byte[]? caBytes = null, Func<string?, RegisterResult>? onRegister = null) : IServerClient
@@ -151,5 +237,8 @@ public class RegistrationWorkerTests : IDisposable
 
         public Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default) =>
             Task.FromResult(new VersionResponse("0.0.0", "0.0.0", "0.0.0"));
+
+        public Task<RenewCertificateResult> RenewCertificateAsync(CancellationToken ct = default) =>
+            Task.FromResult(new RenewCertificateResult(false, null));
     }
 }

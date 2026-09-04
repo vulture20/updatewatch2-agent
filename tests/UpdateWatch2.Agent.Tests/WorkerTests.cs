@@ -1,3 +1,6 @@
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -69,8 +72,7 @@ public class WorkerTests
             cts.Cancel();
         });
 
-        var worker = new HeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), NullLogger<HeartbeatWorker>.Instance);
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState());
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
@@ -84,8 +86,7 @@ public class WorkerTests
         var sentBeforeReady = false;
         var client = new FakeServerClient(onSendAlive: () => sentBeforeReady = true);
 
-        var worker = new HeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 60 }, client, certificateState, NullLogger<HeartbeatWorker>.Instance);
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, certificateState);
 
         await worker.StartAsync(CancellationToken.None);
         await Task.Delay(TimeSpan.FromMilliseconds(200));
@@ -103,7 +104,7 @@ public class WorkerTests
             onFetchVersion: () => new VersionResponse("1.0.0", "9.9.9", "1.0.0")); // deliberately not ProtocolVersion.Current
         var logger = new CapturingLogger<HeartbeatWorker>();
 
-        var worker = new HeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), logger);
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), logger);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
@@ -119,12 +120,69 @@ public class WorkerTests
             onFetchVersion: () => new VersionResponse("1.0.0", ProtocolVersion.Current, "1.0.0"));
         var logger = new CapturingLogger<HeartbeatWorker>();
 
-        var worker = new HeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), logger);
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), logger);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
         Assert.DoesNotContain(logger.Warnings, message => message.Contains("Protocol version mismatch"));
     }
+
+    [Fact]
+    public async Task HeartbeatWorker_renews_a_certificate_within_the_lead_time_and_hot_swaps_the_handler()
+    {
+        var cts = new CancellationTokenSource();
+        var oldCertificate = CreateThrowawayCertificate("expiring-soon", DateTimeOffset.UtcNow.AddDays(-700), DateTimeOffset.UtcNow.AddDays(5));
+        var newCertificate = CreateThrowawayCertificate("renewed", DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(730));
+        var newPfxBase64 = Convert.ToBase64String(newCertificate.Export(X509ContentType.Pfx));
+        var certificateStore = new FakeClientCertificateStore(existing: oldCertificate);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [oldCertificate] } };
+
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onRenewCertificate: () => new RenewCertificateResult(true, newPfxBase64));
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60 },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(1, client.RenewCertificateCallCount);
+        Assert.Contains(oldCertificate.GetCertHashString(HashAlgorithmName.SHA256), certificateStore.DeletedThumbprints);
+        var remaining = Assert.Single(handler.SslOptions.ClientCertificates!.Cast<X509Certificate2>());
+        Assert.Equal(newCertificate.GetCertHashString(HashAlgorithmName.SHA256), remaining.GetCertHashString(HashAlgorithmName.SHA256));
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_renew_a_certificate_outside_the_lead_time()
+    {
+        var cts = new CancellationTokenSource();
+        var farFromExpiry = CreateThrowawayCertificate("plenty-of-time", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var certificateStore = new FakeClientCertificateStore(existing: farFromExpiry);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [farFromExpiry] } };
+
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel());
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60 },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, client.RenewCertificateCallCount);
+    }
+
+    private static HeartbeatWorker CreateHeartbeatWorker(
+        AgentOptions options,
+        IServerClient client,
+        IAgentCertificateState certificateState,
+        ILogger<HeartbeatWorker>? logger = null,
+        IClientCertificateStore? certificateStore = null,
+        SocketsHttpHandler? sharedHttpHandler = null) =>
+        new(options, client, certificateState,
+            certificateStore ?? new FakeClientCertificateStore(existing: null),
+            sharedHttpHandler ?? new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } },
+            logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     private static AgentCertificateState ReadyCertificateState()
     {
@@ -159,8 +217,11 @@ public class WorkerTests
         Action<ReportUpdatesRequest>? onReportUpdates = null,
         Action? onSendAlive = null,
         Func<string?, RegisterResult>? onRegister = null,
-        Func<VersionResponse>? onFetchVersion = null) : IServerClient
+        Func<VersionResponse>? onFetchVersion = null,
+        Func<RenewCertificateResult>? onRenewCertificate = null) : IServerClient
     {
+        public int RenewCertificateCallCount { get; private set; }
+
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
 
         public Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default) =>
@@ -181,6 +242,33 @@ public class WorkerTests
 
         public Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default) =>
             Task.FromResult(onFetchVersion?.Invoke() ?? new VersionResponse("0.0.0", ProtocolVersion.Current, "0.0.0"));
+
+        public Task<RenewCertificateResult> RenewCertificateAsync(CancellationToken ct = default)
+        {
+            RenewCertificateCallCount++;
+            return Task.FromResult(onRenewCertificate?.Invoke() ?? new RenewCertificateResult(false, null));
+        }
+    }
+
+    private class FakeClientCertificateStore(X509Certificate2? existing) : IClientCertificateStore
+    {
+        public X509Certificate2? Saved { get; private set; } = existing;
+
+        public List<string> DeletedThumbprints { get; } = [];
+
+        public X509Certificate2? Load() => Saved;
+
+        public void Save(byte[] pfxBytes) => Saved = X509CertificateLoader.LoadPkcs12(pfxBytes, password: null);
+
+        public void Delete(string thumbprintSha256) => DeletedThumbprints.Add(thumbprintSha256);
+    }
+
+    private static X509Certificate2 CreateThrowawayCertificate(string subjectCn, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest($"CN={subjectCn}", ecdsa, HashAlgorithmName.SHA256);
+        using var certificate = request.CreateSelfSigned(notBefore, notAfter);
+        return X509CertificateLoader.LoadPkcs12(certificate.Export(X509ContentType.Pfx), password: null);
     }
 
     /// <summary>Captures formatted log messages by level — the built-in NullLogger discards them, so tests that need to assert on log content (not just behavior) need this instead.</summary>

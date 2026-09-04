@@ -27,4 +27,11 @@ public class LinuxClientCertificateStore(string path = LinuxClientCertificateSto
         // documented prerequisite gap, not silently assumed away.
         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
+
+    // No-op: a single file, already unconditionally overwritten by Save —
+    // there's no separate "old entry" to clean up the way the Windows
+    // machine store needs.
+    public void Delete(string thumbprintSha256)
+    {
+    }
 }

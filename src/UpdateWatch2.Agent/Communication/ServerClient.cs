@@ -56,4 +56,23 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         var result = await response.Content.ReadFromJsonAsync<VersionResponse>(JsonOptions, ct);
         return result ?? throw new InvalidOperationException("Server returned an empty /api/version response.");
     }
+
+    public async Task<RenewCertificateResult> RenewCertificateAsync(CancellationToken ct = default)
+    {
+        var response = await httpClient.PostAsync(AgentApiRoutes.Renew(Environment.MachineName), content: null, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return new RenewCertificateResult(false, null);
+        }
+
+        // The server's success body is just { certificate }, with no
+        // "success" field of its own — the status code already carries
+        // that. Deserializing straight into RenewCertificateResult would
+        // leave its Success property at its JSON-absent default (false)
+        // even on a 200, so parse the body shape separately instead.
+        var body = await response.Content.ReadFromJsonAsync<RenewCertificateBody>(JsonOptions, ct);
+        return new RenewCertificateResult(true, body?.Certificate);
+    }
+
+    private record RenewCertificateBody(string? Certificate);
 }

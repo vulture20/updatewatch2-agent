@@ -25,3 +25,11 @@ public record ReportUpdatesRequest(IReadOnlyList<ReportedUpdate> Updates, bool R
 
 /// <summary>The server's four independent version numbers (CLAUDE.md) — see <c>GET /api/version</c>.</summary>
 public record VersionResponse(string Server, string Protocol, string Database);
+
+/// <summary>
+/// Result of <c>POST .../renew</c> (updatewatch2-agent#3/updatewatch2-server#7)
+/// — requesting a fresh client certificate before the current one expires.
+/// Unlike <see cref="RegisterResult"/>, this call is authenticated by the
+/// CURRENT still-valid client certificate itself, not a registration token.
+/// </summary>
+public record RenewCertificateResult(bool Success, string? Certificate);
