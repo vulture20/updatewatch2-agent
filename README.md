@@ -13,3 +13,9 @@ A .NET Worker Service, targeting both Windows and Linux from one codebase, that 
 See the project CLAUDE.md for the full architectural briefing, module layout, and configurable-behavior contract, and this repo's own open issues for what's still outstanding.
 
 Companion repository: `updatewatch2-server`.
+
+## License
+
+Copyright (C) 2026 vulture20.
+
+UpdateWatch2 Agent is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. See [LICENSE](LICENSE), or <https://www.gnu.org/licenses/agpl-3.0.html> for the full text.
