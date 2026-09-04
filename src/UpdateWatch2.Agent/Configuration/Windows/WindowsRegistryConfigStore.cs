@@ -36,6 +36,9 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
             UpdateCheckJitterSeconds = ReadInt(key, nameof(AgentOptions.UpdateCheckJitterSeconds), 300),
             AliveIntervalMinutes = ReadInt(key, nameof(AgentOptions.AliveIntervalMinutes), 5),
             LogLevel = (string?)key.GetValue(nameof(AgentOptions.LogLevel)) ?? "INFO",
+            RegistrationRetryIntervalSeconds = ReadInt(key, nameof(AgentOptions.RegistrationRetryIntervalSeconds), 30),
+            RegistrationToken = (string?)key.GetValue(nameof(AgentOptions.RegistrationToken)),
+            ClientCertificateThumbprint = (string?)key.GetValue(nameof(AgentOptions.ClientCertificateThumbprint)),
         };
     }
 
@@ -48,6 +51,25 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
         key.SetValue(nameof(AgentOptions.UpdateCheckJitterSeconds), options.UpdateCheckJitterSeconds, RegistryValueKind.DWord);
         key.SetValue(nameof(AgentOptions.AliveIntervalMinutes), options.AliveIntervalMinutes, RegistryValueKind.DWord);
         key.SetValue(nameof(AgentOptions.LogLevel), options.LogLevel);
+        key.SetValue(nameof(AgentOptions.RegistrationRetryIntervalSeconds), options.RegistrationRetryIntervalSeconds, RegistryValueKind.DWord);
+        // SetValue with a null string throws, so a not-yet-set/cleared value
+        // deletes the named value instead of writing an empty string —
+        // keeps Load()'s null-coalescing-free reads (via `as string`)
+        // accurate for "never set" vs. "explicitly empty".
+        SetOrDeleteString(key, nameof(AgentOptions.RegistrationToken), options.RegistrationToken);
+        SetOrDeleteString(key, nameof(AgentOptions.ClientCertificateThumbprint), options.ClientCertificateThumbprint);
+    }
+
+    private static void SetOrDeleteString(RegistryKey key, string name, string? value)
+    {
+        if (value is null)
+        {
+            key.DeleteValue(name, throwOnMissingValue: false);
+        }
+        else
+        {
+            key.SetValue(name, value);
+        }
     }
 
     private static int ReadInt(RegistryKey key, string name, int fallback) =>

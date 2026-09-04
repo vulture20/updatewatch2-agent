@@ -31,4 +31,31 @@ public class AgentOptions
     /// the server UI (not implemented yet).
     /// </summary>
     public string LogLevel { get; set; } = "INFO";
+
+    /// <summary>
+    /// Interval between registration polls while waiting for admin
+    /// approval and certificate issuance (updatewatch2-agent#1) — separate
+    /// from <see cref="AliveIntervalMinutes"/> since a human is typically
+    /// actively watching during onboarding, so a multi-minute wait would
+    /// feel broken.
+    /// </summary>
+    public int RegistrationRetryIntervalSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// The opaque, per-agent registration token received on first contact
+    /// and re-presented on every registration poll until a certificate is
+    /// issued — see RegistrationWorker and the server's
+    /// AgentRegistrationService for the full state machine. Cleared once a
+    /// certificate has been received (no longer needed at that point).
+    /// </summary>
+    public string? RegistrationToken { get; set; }
+
+    /// <summary>
+    /// SHA-256 thumbprint of this agent's issued client certificate, once
+    /// received. On Windows the certificate itself lives in the machine
+    /// certificate store (see Certificates.Windows.WindowsClientCertificateStore)
+    /// and is looked up by this thumbprint; on Linux it's a file path
+    /// instead, so this field is unused there.
+    /// </summary>
+    public string? ClientCertificateThumbprint { get; set; }
 }

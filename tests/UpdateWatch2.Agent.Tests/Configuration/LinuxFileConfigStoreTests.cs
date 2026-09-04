@@ -33,6 +33,9 @@ public class LinuxFileConfigStoreTests : IDisposable
             UpdateCheckJitterSeconds = 45,
             AliveIntervalMinutes = 2,
             LogLevel = "DEBUG",
+            RegistrationRetryIntervalSeconds = 15,
+            RegistrationToken = "abc123",
+            ClientCertificateThumbprint = "deadbeef",
         };
 
         store.Save(original);
@@ -44,6 +47,22 @@ public class LinuxFileConfigStoreTests : IDisposable
         Assert.Equal(original.UpdateCheckJitterSeconds, loaded.UpdateCheckJitterSeconds);
         Assert.Equal(original.AliveIntervalMinutes, loaded.AliveIntervalMinutes);
         Assert.Equal(original.LogLevel, loaded.LogLevel);
+        Assert.Equal(original.RegistrationRetryIntervalSeconds, loaded.RegistrationRetryIntervalSeconds);
+        Assert.Equal(original.RegistrationToken, loaded.RegistrationToken);
+        Assert.Equal(original.ClientCertificateThumbprint, loaded.ClientCertificateThumbprint);
+    }
+
+    [Fact]
+    public void Save_then_load_round_trips_null_registration_fields_as_null()
+    {
+        var store = new LinuxFileConfigStore(_path);
+        var original = new AgentOptions { RegistrationToken = null, ClientCertificateThumbprint = null };
+
+        store.Save(original);
+        var loaded = store.Load();
+
+        Assert.Null(loaded.RegistrationToken);
+        Assert.Null(loaded.ClientCertificateThumbprint);
     }
 
     public void Dispose() => File.Delete(_path);
