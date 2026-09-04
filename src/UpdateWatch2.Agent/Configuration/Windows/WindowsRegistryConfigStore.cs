@@ -1,4 +1,6 @@
 using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Microsoft.Win32;
 
 namespace UpdateWatch2.Agent.Configuration.Windows;
@@ -44,7 +46,7 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
 
     public void Save(AgentOptions options)
     {
-        using var key = Registry.LocalMachine.CreateSubKey(KeyPath);
+        using var key = Registry.LocalMachine.CreateSubKey(KeyPath, RegistryKeyPermissionCheck.ReadWriteSubTree, RestrictedToAdministratorsAndSystem());
         key.SetValue(nameof(AgentOptions.ServerAddress), options.ServerAddress);
         key.SetValue(nameof(AgentOptions.ServerPort), options.ServerPort, RegistryValueKind.DWord);
         key.SetValue(nameof(AgentOptions.UpdateCheckIntervalMinutes), options.UpdateCheckIntervalMinutes, RegistryValueKind.DWord);
@@ -74,4 +76,29 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
 
     private static int ReadInt(RegistryKey key, string name, int fallback) =>
         key.GetValue(name) is int value ? value : fallback;
+
+    // AgentOptions now carries a bearer secret (RegistrationToken — see
+    // updatewatch2-agent#1) that lets whoever holds it complete this
+    // agent's onboarding and receive its client certificate.
+    // HKLM\SOFTWARE's default ACL commonly grants standard, non-admin
+    // users read access to subkeys created under it, which would expose
+    // that token; this breaks inheritance from the parent key and grants
+    // only Administrators/SYSTEM, the same boundary already used for the
+    // server's CA/leaf certificates and this agent's own client
+    // certificate file. Flagged by an automated security review after the
+    // RegistrationToken field was added — this fix followed, though it is
+    // unverified against a real Windows registry in this session (no
+    // Windows host available to run it against).
+    private static RegistrySecurity RestrictedToAdministratorsAndSystem()
+    {
+        var security = new RegistrySecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new RegistryAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            RegistryRights.FullControl, AccessControlType.Allow));
+        security.AddAccessRule(new RegistryAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            RegistryRights.FullControl, AccessControlType.Allow));
+        return security;
+    }
 }

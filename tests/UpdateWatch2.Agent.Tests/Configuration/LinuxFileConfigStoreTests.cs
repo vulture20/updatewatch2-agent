@@ -65,5 +65,21 @@ public class LinuxFileConfigStoreTests : IDisposable
         Assert.Null(loaded.ClientCertificateThumbprint);
     }
 
+    [Fact]
+    public void Save_restricts_the_file_to_owner_only_since_RegistrationToken_is_a_bearer_secret()
+    {
+        // Regression test for a finding from an automated security review:
+        // AgentOptions.RegistrationToken lets whoever holds it complete
+        // this agent's onboarding and receive its client certificate, so
+        // the config file must not be left at the default (commonly
+        // world-readable) permissions once it holds one.
+        var store = new LinuxFileConfigStore(_path);
+
+        store.Save(new AgentOptions { RegistrationToken = "some-secret-token" });
+
+        var mode = File.GetUnixFileMode(_path);
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
+    }
+
     public void Dispose() => File.Delete(_path);
 }
