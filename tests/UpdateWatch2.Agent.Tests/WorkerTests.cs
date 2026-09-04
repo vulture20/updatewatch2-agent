@@ -172,6 +172,90 @@ public class WorkerTests
         Assert.Equal(0, client.RenewCertificateCallCount);
     }
 
+    [Fact]
+    public async Task HeartbeatWorker_self_heals_after_two_consecutive_certificate_rejections()
+    {
+        // Direct proof of updatewatch2-server#11/updatewatch2-agent#5: an
+        // admin reissuing a certificate this agent still has loaded (not
+        // lost) surfaces as repeated 401/403s from SendAliveAsync — this
+        // worker must notice and drop the now-untrusted certificate itself,
+        // so RegistrationWorker's existing lost-certificate recovery path
+        // picks it up (proven separately in RegistrationWorkerTests).
+        var cts = new CancellationTokenSource();
+        var certificate = CreateThrowawayCertificate("rejected-host", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var certificateStore = new FakeClientCertificateStore(existing: certificate);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [certificate] } };
+
+        var client = new FakeServerClient(onSendAliveOutcome: callCount =>
+        {
+            if (callCount >= 2)
+            {
+                cts.Cancel();
+            }
+            return AliveOutcome.CertificateRejected;
+        });
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 0 },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Contains(certificate.GetCertHashString(HashAlgorithmName.SHA256), certificateStore.DeletedThumbprints);
+        Assert.Empty(handler.SslOptions.ClientCertificates!);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_self_heal_after_a_single_certificate_rejection()
+    {
+        var cts = new CancellationTokenSource();
+        var certificate = CreateThrowawayCertificate("rejected-once-host", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var certificateStore = new FakeClientCertificateStore(existing: certificate);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [certificate] } };
+
+        var client = new FakeServerClient(onSendAliveOutcome: _ =>
+        {
+            cts.Cancel(); // stop after the first tick
+            return AliveOutcome.CertificateRejected;
+        });
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60 },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Empty(certificateStore.DeletedThumbprints);
+        Assert.Single(handler.SslOptions.ClientCertificates!);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_resets_the_rejection_count_on_a_successful_heartbeat_in_between()
+    {
+        var cts = new CancellationTokenSource();
+        var certificate = CreateThrowawayCertificate("intermittent-host", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var certificateStore = new FakeClientCertificateStore(existing: certificate);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [certificate] } };
+
+        // Reject, succeed, reject — never two rejections in a row.
+        var client = new FakeServerClient(onSendAliveOutcome: callCount =>
+        {
+            if (callCount == 3)
+            {
+                cts.Cancel();
+            }
+            return callCount == 2 ? AliveOutcome.Success : AliveOutcome.CertificateRejected;
+        });
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 0 },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Empty(certificateStore.DeletedThumbprints);
+    }
+
     private static HeartbeatWorker CreateHeartbeatWorker(
         AgentOptions options,
         IServerClient client,
@@ -218,9 +302,12 @@ public class WorkerTests
         Action? onSendAlive = null,
         Func<string?, RegisterResult>? onRegister = null,
         Func<VersionResponse>? onFetchVersion = null,
-        Func<RenewCertificateResult>? onRenewCertificate = null) : IServerClient
+        Func<RenewCertificateResult>? onRenewCertificate = null,
+        Func<int, AliveOutcome>? onSendAliveOutcome = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
+
+        public int SendAliveCallCount { get; private set; }
 
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
 
@@ -228,10 +315,11 @@ public class WorkerTests
             Task.FromResult(onRegister?.Invoke(registrationToken)
                 ?? new RegisterResult(Approved: true, RegistrationToken: null, Certificate: null, ProtocolVersion: null));
 
-        public Task SendAliveAsync(CancellationToken ct = default)
+        public Task<AliveOutcome> SendAliveAsync(CancellationToken ct = default)
         {
+            SendAliveCallCount++;
             onSendAlive?.Invoke();
-            return Task.CompletedTask;
+            return Task.FromResult(onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success);
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)

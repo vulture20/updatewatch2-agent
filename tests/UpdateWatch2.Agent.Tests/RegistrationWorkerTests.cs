@@ -231,7 +231,7 @@ public class RegistrationWorkerTests : IDisposable
                 ?? new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: null));
         }
 
-        public Task SendAliveAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task<AliveOutcome> SendAliveAsync(CancellationToken ct = default) => Task.FromResult(AliveOutcome.Success);
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default) => Task.CompletedTask;
 

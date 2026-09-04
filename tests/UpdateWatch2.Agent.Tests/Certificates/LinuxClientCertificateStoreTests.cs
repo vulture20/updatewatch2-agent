@@ -51,16 +51,49 @@ public class LinuxClientCertificateStoreTests : IDisposable
     }
 
     [Fact]
-    public void Delete_is_a_no_op_and_leaves_the_stored_certificate_untouched()
+    public void Delete_removes_the_file_when_the_thumbprint_matches_the_currently_stored_certificate()
     {
+        // The self-heal case (updatewatch2-server#11/updatewatch2-agent#5):
+        // no Save preceded this call, so Delete itself must make Load()
+        // start returning null, or RegistrationWorker's recovery loop
+        // never notices the certificate is gone.
         var store = new LinuxClientCertificateStore(_path);
-        store.Save(CreateThrowawayCertificate("delete-noop-test"));
+        var pfxBytes = CreateThrowawayCertificate("delete-match-test");
+        store.Save(pfxBytes);
+        using var saved = X509CertificateLoader.LoadPkcs12(pfxBytes, password: null);
+        var thumbprint = saved.GetCertHashString(HashAlgorithmName.SHA256);
 
-        store.Delete("any-thumbprint-whatsoever");
+        store.Delete(thumbprint);
+
+        Assert.Null(store.Load());
+        Assert.False(File.Exists(_path));
+    }
+
+    [Fact]
+    public void Delete_is_a_no_op_when_the_thumbprint_does_not_match_the_currently_stored_certificate()
+    {
+        // The renewal case (updatewatch2-server#7/updatewatch2-agent#3):
+        // Save already wrote the NEW certificate before Delete is called
+        // with the OLD thumbprint — Delete must not remove what Save just
+        // wrote.
+        var store = new LinuxClientCertificateStore(_path);
+        store.Save(CreateThrowawayCertificate("delete-mismatch-test"));
+
+        store.Delete("some-other-thumbprint-entirely");
 
         var loaded = store.Load();
         Assert.NotNull(loaded);
-        Assert.Equal("CN=delete-noop-test", loaded.Subject);
+        Assert.Equal("CN=delete-mismatch-test", loaded.Subject);
+    }
+
+    [Fact]
+    public void Delete_is_a_no_op_when_no_certificate_has_been_saved()
+    {
+        var store = new LinuxClientCertificateStore(_path);
+
+        store.Delete("any-thumbprint-whatsoever");
+
+        Assert.Null(store.Load());
     }
 
     private static byte[] CreateThrowawayCertificate(string subjectCn)

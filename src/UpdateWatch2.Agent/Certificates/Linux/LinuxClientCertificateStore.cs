@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace UpdateWatch2.Agent.Certificates.Linux;
@@ -28,10 +29,30 @@ public class LinuxClientCertificateStore(string path = LinuxClientCertificateSto
         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
-    // No-op: a single file, already unconditionally overwritten by Save —
-    // there's no separate "old entry" to clean up the way the Windows
-    // machine store needs.
+    // Deliberately thumbprint-scoped, not "always delete the file" — this
+    // is called from two different situations that need opposite outcomes
+    // on the SAME single-file store: renewal (Save writes the new cert,
+    // then Delete(oldThumbprint) runs — must NOT remove what Save just
+    // wrote) and self-heal-from-rejection (Delete(currentThumbprint) runs
+    // with nothing having called Save first — MUST remove the file, or
+    // Load() keeps returning the now-untrusted certificate forever and
+    // RegistrationWorker's recovery loop never sees it as gone). Found by
+    // a live run, not by reasoning about it up front: the original no-op
+    // implementation was written only against the renewal call pattern
+    // (where it happens to look correct) and silently broke self-heal
+    // (updatewatch2-server#11/updatewatch2-agent#5), which needs the file
+    // to actually disappear.
     public void Delete(string thumbprintSha256)
     {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        using var current = X509CertificateLoader.LoadPkcs12FromFile(path, password: null);
+        if (string.Equals(current.GetCertHashString(HashAlgorithmName.SHA256), thumbprintSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Delete(path);
+        }
     }
 }

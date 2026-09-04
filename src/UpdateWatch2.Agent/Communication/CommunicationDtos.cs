@@ -33,3 +33,21 @@ public record VersionResponse(string Server, string Protocol, string Database);
 /// CURRENT still-valid client certificate itself, not a registration token.
 /// </summary>
 public record RenewCertificateResult(bool Success, string? Certificate);
+
+/// <summary>
+/// Outcome of an alive heartbeat (updatewatch2-server#11/updatewatch2-agent#5).
+/// <see cref="CertificateRejected"/> is deliberately its own case, distinct
+/// from <see cref="OtherFailure"/> — it's the one outcome that means "the
+/// certificate itself is no longer trusted" (a 401/403 response, which can
+/// only happen after a real round-trip completed; a network-level problem
+/// surfaces as a thrown exception instead, never this enum at all), as
+/// opposed to some unrelated server-side problem a 500 or similar would
+/// indicate, which self-healing by discarding a perfectly good certificate
+/// would only make worse.
+/// </summary>
+public enum AliveOutcome
+{
+    Success,
+    CertificateRejected,
+    OtherFailure,
+}

@@ -17,7 +17,15 @@ public interface IServerClient
     /// </summary>
     Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default);
 
-    Task SendAliveAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Sends an alive heartbeat. The returned <see cref="AliveOutcome"/>
+    /// distinguishes a certificate-rejection (401/403 — the server no
+    /// longer trusts this agent's certificate, e.g. an admin reissued it
+    /// while this agent kept running, updatewatch2-server#11) from any
+    /// other failure, so a caller can react specifically to the former
+    /// without treating an unrelated server error the same way.
+    /// </summary>
+    Task<AliveOutcome> SendAliveAsync(CancellationToken ct = default);
 
     Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default);
 

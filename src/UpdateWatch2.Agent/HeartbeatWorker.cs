@@ -9,13 +9,17 @@ namespace UpdateWatch2.Agent;
 /// <summary>
 /// Sends a periodic alive message to the server (CLAUDE.md section 2.4)
 /// and, piggybacked on the same cadence, checks for a protocol-version
-/// mismatch (updatewatch2-server#3/updatewatch2-agent#2) and whether this
+/// mismatch (updatewatch2-server#3/updatewatch2-agent#2), whether this
 /// agent's client certificate needs proactive renewal
-/// (updatewatch2-server#7/updatewatch2-agent#3) — reusing this existing
-/// periodic cycle rather than a one-time startup check means a server
-/// upgrade, or a certificate approaching expiry, that happens while this
-/// agent keeps running gets detected too, not just a condition already
-/// present at this agent's own last startup.
+/// (updatewatch2-server#7/updatewatch2-agent#3), and whether the server has
+/// stopped trusting the certificate this agent is still presenting
+/// (updatewatch2-server#11/updatewatch2-agent#5 — e.g. an admin reissued
+/// it while this agent kept running, as opposed to genuinely losing it,
+/// which <see cref="RegistrationWorker"/> already handles) — reusing this
+/// existing periodic cycle rather than a one-time startup check means a
+/// server upgrade, an approaching expiry, or a mid-lifetime revocation
+/// that happens while this agent keeps running all get detected too, not
+/// just a condition already present at this agent's own last startup.
 /// </summary>
 public class HeartbeatWorker(
     AgentOptions options,
@@ -25,6 +29,19 @@ public class HeartbeatWorker(
     SocketsHttpHandler sharedHttpHandler,
     ILogger<HeartbeatWorker> logger) : BackgroundService
 {
+    // A single 401/403 could in principle be some transient fluke this
+    // worker hasn't anticipated — requiring it twice in a row, with
+    // anything else (a success, or a non-cert-related failure) resetting
+    // the count, keeps this from ever firing on a one-off (updatewatch2-server#11's
+    // own design note). In practice a single clean 401/403 IS already an
+    // unambiguous signal (it only happens after a full round-trip
+    // completes — a real network problem throws instead, never reaches
+    // this check at all), so this is deliberate extra caution, not a
+    // response to an observed false positive.
+    private const int CertificateRejectionThreshold = 2;
+
+    private int _consecutiveCertificateRejections;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Nothing here works before RegistrationWorker has attached a
@@ -37,7 +54,7 @@ public class HeartbeatWorker(
         {
             try
             {
-                await serverClient.SendAliveAsync(stoppingToken);
+                await HandleAliveAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -71,6 +88,51 @@ public class HeartbeatWorker(
 
             await Task.Delay(TimeSpan.FromMinutes(options.AliveIntervalMinutes), stoppingToken);
         }
+    }
+
+    private async Task HandleAliveAsync(CancellationToken ct)
+    {
+        var outcome = await serverClient.SendAliveAsync(ct);
+        if (outcome != AliveOutcome.CertificateRejected)
+        {
+            _consecutiveCertificateRejections = 0;
+            return;
+        }
+
+        _consecutiveCertificateRejections++;
+        if (_consecutiveCertificateRejections < CertificateRejectionThreshold)
+        {
+            return;
+        }
+
+        SelfHealRejectedCertificate();
+        _consecutiveCertificateRejections = 0;
+    }
+
+    private void SelfHealRejectedCertificate()
+    {
+        var current = certificateStore.Load();
+        if (current is null)
+        {
+            // Already gone by some other path — nothing left to clean up;
+            // RegistrationWorker's maintenance loop already owns recovery
+            // from here.
+            return;
+        }
+
+        logger.LogWarning(
+            "This agent's client certificate was rejected {Threshold} times in a row — the server no longer trusts it " +
+            "(e.g. an admin reissued it via updatewatch2-server#8 while this agent kept running). Dropping the local " +
+            "certificate so RegistrationWorker's maintenance loop recovers it the same way it recovers a genuinely " +
+            "lost certificate.",
+            CertificateRejectionThreshold);
+
+        var thumbprint = current.GetCertHashString(HashAlgorithmName.SHA256);
+        certificateStore.Delete(thumbprint);
+
+        // Not Add-alongside — an already-rejected certificate has no
+        // business staying attached to the handler at all.
+        sharedHttpHandler.SslOptions.ClientCertificates!.Clear();
     }
 
     private async Task CheckProtocolVersionAsync(CancellationToken ct)

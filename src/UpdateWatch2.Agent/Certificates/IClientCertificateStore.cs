@@ -17,12 +17,19 @@ public interface IClientCertificateStore
     void Save(byte[] pfxBytes);
 
     /// <summary>
-    /// Removes a previously stored certificate by its SHA-256 thumbprint —
-    /// call before <see cref="Save"/> on a renewal/re-issuance so the
-    /// Windows machine store doesn't accumulate an orphaned entry for every
-    /// certificate this agent has ever held (updatewatch2-agent#3). A no-op
-    /// on Linux, where <see cref="Save"/> already unconditionally overwrites
-    /// the single PFX file.
+    /// Removes a stored certificate by its SHA-256 thumbprint — a no-op if
+    /// nothing currently stored matches that thumbprint. Two distinct
+    /// callers rely on this: renewal/re-issuance calls it with the OLD
+    /// thumbprint *after* <see cref="Save"/> has already written the new
+    /// certificate (so the Windows machine store doesn't accumulate an
+    /// orphaned entry for every certificate this agent has ever held,
+    /// updatewatch2-agent#3 — and, on Linux, so the file left behind by
+    /// that already-superseded thumbprint is correctly a no-op); self-heal
+    /// calls it with the CURRENT thumbprint with no preceding
+    /// <see cref="Save"/> at all, specifically to make the next
+    /// <see cref="Load"/> return null (updatewatch2-server#11/updatewatch2-agent#5)
+    /// — on Linux this must actually delete the file, not silently do
+    /// nothing, or that recovery path never triggers.
     /// </summary>
     void Delete(string thumbprintSha256);
 }

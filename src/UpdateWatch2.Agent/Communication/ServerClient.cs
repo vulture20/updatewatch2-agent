@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -33,13 +34,24 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         return result ?? new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: null);
     }
 
-    public async Task SendAliveAsync(CancellationToken ct = default)
+    public async Task<AliveOutcome> SendAliveAsync(CancellationToken ct = default)
     {
         var response = await httpClient.PostAsync(AgentApiRoutes.Alive(Environment.MachineName), content: null, ct);
-        if (!response.IsSuccessStatusCode)
+        if (response.IsSuccessStatusCode)
         {
-            logger.LogWarning("Alive heartbeat failed with status {StatusCode}", response.StatusCode);
+            return AliveOutcome.Success;
         }
+
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            logger.LogWarning(
+                "Alive heartbeat rejected with status {StatusCode} — this agent's certificate may no longer be trusted by the server.",
+                response.StatusCode);
+            return AliveOutcome.CertificateRejected;
+        }
+
+        logger.LogWarning("Alive heartbeat failed with status {StatusCode}", response.StatusCode);
+        return AliveOutcome.OtherFailure;
     }
 
     public async Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)

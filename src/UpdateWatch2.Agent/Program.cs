@@ -95,13 +95,26 @@ builder.Services.AddSingleton(sp =>
         },
         // The server re-validates the presented client certificate on
         // every request, not just once per TLS handshake (no certificate
-        // cache configured server-side). After HeartbeatWorker hot-swaps a
-        // renewed/reissued certificate into SslOptions.ClientCertificates,
-        // an already-open pooled connection keeps presenting whatever cert
-        // was live when it was negotiated — bounding how long a stale
-        // connection can stay pooled keeps that window small instead of
-        // relying on SocketsHttpHandler's (longer) default idle timeout.
-        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+        // cache configured server-side), and SslOptions is only consulted
+        // when a *new* TLS connection is negotiated — so an already-open
+        // pooled connection keeps presenting whatever certificate (or lack
+        // of one) was live when it was negotiated, regardless of any later
+        // change to SslOptions.ClientCertificates. Zero disables pooling
+        // for this handler entirely rather than just bounding it: a
+        // non-zero-but-short lifetime (originally 2 minutes here) still
+        // leaves a real race for updatewatch2-server#7's renewal hot-swap
+        // and updatewatch2-server#11's self-heal-then-recover sequence,
+        // both of which can change ClientCertificates twice within a much
+        // shorter window than any nonzero lifetime — confirmed live: a
+        // freshly recovered certificate got immediately re-rejected and
+        // deleted again by a stale pooled connection from the moment just
+        // before it was attached, permanently stranding the agent (the
+        // one-shot registration token that recovery consumed is gone by
+        // then, so there was no way back in without another admin
+        // re-issuance). This agent's request volume is low (a heartbeat
+        // every few minutes at most) — the extra TLS handshake per request
+        // this costs is immaterial next to that cadence.
+        PooledConnectionLifetime = TimeSpan.Zero,
     };
 });
 
