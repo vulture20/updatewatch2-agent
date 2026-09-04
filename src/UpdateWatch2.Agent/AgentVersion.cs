@@ -7,5 +7,5 @@ namespace UpdateWatch2.Agent;
 /// </summary>
 public static class AgentVersion
 {
-    public const string Current = "0.2.0";
+    public const string Current = "0.3.0";
 }

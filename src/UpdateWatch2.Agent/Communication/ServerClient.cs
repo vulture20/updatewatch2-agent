@@ -47,4 +47,13 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.ReportUpdates(Environment.MachineName), report, JsonOptions, ct);
         response.EnsureSuccessStatusCode();
     }
+
+    public async Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default)
+    {
+        var response = await httpClient.GetAsync(AgentApiRoutes.Version, ct);
+        response.EnsureSuccessStatusCode();
+
+        var result = await response.Content.ReadFromJsonAsync<VersionResponse>(JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("Server returned an empty /api/version response.");
+    }
 }

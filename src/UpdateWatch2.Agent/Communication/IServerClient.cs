@@ -20,4 +20,7 @@ public interface IServerClient
     Task SendAliveAsync(CancellationToken ct = default);
 
     Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default);
+
+    /// <summary>Fetches the server's four version numbers. Anonymous; no cert needed — used for protocol-compatibility detection (updatewatch2-server#3).</summary>
+    Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default);
 }

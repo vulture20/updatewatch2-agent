@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
+using UpdateWatch2.Agent.Protocol;
 using UpdateWatch2.Agent.UpdateCheck;
 
 namespace UpdateWatch2.Agent.Tests;
@@ -92,6 +94,38 @@ public class WorkerTests
         Assert.False(sentBeforeReady);
     }
 
+    [Fact]
+    public async Task HeartbeatWorker_warns_when_the_servers_protocol_version_differs()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(), // stop the worker's loop after the first tick
+            onFetchVersion: () => new VersionResponse("1.0.0", "9.9.9", "1.0.0")); // deliberately not ProtocolVersion.Current
+        var logger = new CapturingLogger<HeartbeatWorker>();
+
+        var worker = new HeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), logger);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Contains(logger.Warnings, message => message.Contains("Protocol version mismatch"));
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_warn_when_the_servers_protocol_version_matches()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onFetchVersion: () => new VersionResponse("1.0.0", ProtocolVersion.Current, "1.0.0"));
+        var logger = new CapturingLogger<HeartbeatWorker>();
+
+        var worker = new HeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), logger);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.DoesNotContain(logger.Warnings, message => message.Contains("Protocol version mismatch"));
+    }
+
     private static AgentCertificateState ReadyCertificateState()
     {
         var state = new AgentCertificateState();
@@ -124,7 +158,8 @@ public class WorkerTests
     private class FakeServerClient(
         Action<ReportUpdatesRequest>? onReportUpdates = null,
         Action? onSendAlive = null,
-        Func<string?, RegisterResult>? onRegister = null) : IServerClient
+        Func<string?, RegisterResult>? onRegister = null,
+        Func<VersionResponse>? onFetchVersion = null) : IServerClient
     {
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
 
@@ -142,6 +177,27 @@ public class WorkerTests
         {
             onReportUpdates?.Invoke(report);
             return Task.CompletedTask;
+        }
+
+        public Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default) =>
+            Task.FromResult(onFetchVersion?.Invoke() ?? new VersionResponse("0.0.0", ProtocolVersion.Current, "0.0.0"));
+    }
+
+    /// <summary>Captures formatted log messages by level — the built-in NullLogger discards them, so tests that need to assert on log content (not just behavior) need this instead.</summary>
+    private class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
         }
     }
 }

@@ -148,5 +148,8 @@ public class RegistrationWorkerTests : IDisposable
         public Task SendAliveAsync(CancellationToken ct = default) => Task.CompletedTask;
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default) =>
+            Task.FromResult(new VersionResponse("0.0.0", "0.0.0", "0.0.0"));
     }
 }

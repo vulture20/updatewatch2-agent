@@ -22,3 +22,6 @@ public record RegisterResult(bool Approved, string? RegistrationToken, string? C
 public record ReportedUpdate(string Title, string? PackageId, string? Description);
 
 public record ReportUpdatesRequest(IReadOnlyList<ReportedUpdate> Updates, bool RebootRequired);
+
+/// <summary>The server's four independent version numbers (CLAUDE.md) — see <c>GET /api/version</c>.</summary>
+public record VersionResponse(string Server, string Protocol, string Database);
