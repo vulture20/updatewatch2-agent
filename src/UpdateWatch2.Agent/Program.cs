@@ -96,6 +96,33 @@ builder.Services.AddSingleton(sp =>
     };
 });
 
+// A factory for a throwaway IServerClient on its own handler/connection
+// pool — deliberately never the shared SocketsHttpHandler above. See
+// RegistrationWorker's class-level remarks: bootstrap traffic (fetching
+// the CA cert, every registration poll, all of it pre-certificate) must
+// never share a connection pool with the shared handler, or pre-existing
+// pooled connections from that traffic get reused for later, post-
+// certificate calls — which then silently never present the certificate.
+builder.Services.AddSingleton<Func<IServerClient>>(sp => () =>
+{
+    var validator = sp.GetRequiredService<PinnedServerCertificateValidator>();
+    var opts = sp.GetRequiredService<AgentOptions>();
+    var bootstrapHandler = new SocketsHttpHandler
+    {
+        SslOptions = new SslClientAuthenticationOptions
+        {
+            RemoteCertificateValidationCallback = (_, certificate, _, _) => validator.Validate(certificate),
+        },
+    };
+    var bootstrapHttpClient = new HttpClient(bootstrapHandler);
+    if (!string.IsNullOrWhiteSpace(opts.ServerAddress))
+    {
+        bootstrapHttpClient.BaseAddress = new Uri($"https://{opts.ServerAddress}:{opts.ServerPort}/");
+    }
+
+    return new ServerClient(bootstrapHttpClient, sp.GetRequiredService<ILogger<ServerClient>>());
+});
+
 builder.Services.AddHttpClient<IServerClient, ServerClient>((sp, client) =>
 {
     var options = sp.GetRequiredService<AgentOptions>();

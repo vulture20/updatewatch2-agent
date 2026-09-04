@@ -29,8 +29,8 @@ public class RegistrationWorkerTests : IDisposable
         using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } };
 
         var worker = new RegistrationWorker(
-            new AgentOptions(), new FakeAgentConfigStore(), serverClient, new FileCaTrustStore(_caPath),
-            certificateStore, handler, certificateState, NullLogger<RegistrationWorker>.Instance);
+            new AgentOptions(), new FakeAgentConfigStore(), new FileCaTrustStore(_caPath), certificateStore,
+            handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
 
         await RunToCompletionAsync(worker);
 
@@ -64,8 +64,8 @@ public class RegistrationWorkerTests : IDisposable
         using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } };
 
         var worker = new RegistrationWorker(
-            options, configStore, serverClient, new FileCaTrustStore(_caPath),
-            certificateStore, handler, certificateState, NullLogger<RegistrationWorker>.Instance);
+            options, configStore, new FileCaTrustStore(_caPath), certificateStore,
+            handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
 
         await RunToCompletionAsync(worker, timeout: TimeSpan.FromSeconds(5));
 

@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Security.Cryptography.X509Certificates;
 using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
@@ -23,14 +22,31 @@ namespace UpdateWatch2.Agent;
 ///   unblocking HeartbeatWorker/UpdateCheckWorker, which both wait on
 ///   IAgentCertificateState before doing anything that needs a
 ///   certificate.
+///
+/// The bootstrap calls (fetching the CA certificate, every registration
+/// poll) run over their own private <see cref="IServerClient"/>, built by
+/// <paramref name="createBootstrapClient"/> on its own throwaway
+/// HttpClient/handler — deliberately *not* the shared
+/// <see cref="SocketsHttpHandler"/> the rest of the agent uses. Confirmed
+/// live to matter, not just in theory: HTTP keep-alive connections are
+/// pooled per (scheme, host, port) and reused regardless of whether a
+/// client certificate is added to the handler afterward, since SslOptions
+/// is only consulted when a *new* TLS connection is negotiated. Making
+/// these bootstrap calls on the shared handler meant the very
+/// pre-certificate connections it opened stayed pooled and got reused for
+/// the first "real" (post-registration) calls too — which therefore never
+/// actually presented the certificate and got rejected. Isolating the
+/// bootstrap traffic onto its own connection pool means the shared
+/// handler's pool stays completely empty until the certificate is already
+/// attached, so its first-ever connection is the first one that needs it.
 /// </summary>
 public class RegistrationWorker(
     AgentOptions options,
     IAgentConfigStore configStore,
-    IServerClient serverClient,
     FileCaTrustStore caTrustStore,
     IClientCertificateStore certificateStore,
-    SocketsHttpHandler httpHandler,
+    SocketsHttpHandler sharedHttpHandler,
+    Func<IServerClient> createBootstrapClient,
     IAgentCertificateState certificateState,
     ILogger<RegistrationWorker> logger) : BackgroundService
 {
@@ -41,14 +57,15 @@ public class RegistrationWorker(
             var existingCertificate = certificateStore.Load();
             if (existingCertificate is not null)
             {
-                AttachClientCertificate(existingCertificate);
+                sharedHttpHandler.SslOptions.ClientCertificates!.Add(existingCertificate);
                 certificateState.MarkReady();
                 logger.LogInformation("Using previously issued client certificate — skipping registration.");
                 return;
             }
 
-            await EnsureCaPinnedAsync(stoppingToken);
-            await PollUntilCertifiedAsync(stoppingToken);
+            var bootstrapClient = createBootstrapClient();
+            await EnsureCaPinnedAsync(bootstrapClient, stoppingToken);
+            await PollUntilCertifiedAsync(bootstrapClient, stoppingToken);
         }
         catch (OperationCanceledException)
         {
@@ -56,25 +73,25 @@ public class RegistrationWorker(
         }
     }
 
-    private async Task EnsureCaPinnedAsync(CancellationToken ct)
+    private async Task EnsureCaPinnedAsync(IServerClient bootstrapClient, CancellationToken ct)
     {
         if (caTrustStore.Load() is not null)
         {
             return;
         }
 
-        var caBytes = await serverClient.FetchCaCertificateAsync(ct);
+        var caBytes = await bootstrapClient.FetchCaCertificateAsync(ct);
         caTrustStore.Save(caBytes);
         logger.LogInformation("Pinned the server's CA certificate on first contact.");
     }
 
-    private async Task PollUntilCertifiedAsync(CancellationToken stoppingToken)
+    private async Task PollUntilCertifiedAsync(IServerClient bootstrapClient, CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var result = await serverClient.RegisterAsync(options.RegistrationToken, stoppingToken);
+                var result = await bootstrapClient.RegisterAsync(options.RegistrationToken, stoppingToken);
 
                 if (result.RegistrationToken is not null && result.RegistrationToken != options.RegistrationToken)
                 {
@@ -91,7 +108,7 @@ public class RegistrationWorker(
 
                     var storedCertificate = certificateStore.Load()
                         ?? throw new InvalidOperationException("Client certificate was just saved but could not be reloaded.");
-                    AttachClientCertificate(storedCertificate);
+                    sharedHttpHandler.SslOptions.ClientCertificates!.Add(storedCertificate);
                     certificateState.MarkReady();
                     logger.LogInformation("Registration complete — received and installed the client certificate.");
                     return;
@@ -122,7 +139,4 @@ public class RegistrationWorker(
             await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, options.RegistrationRetryIntervalSeconds)), stoppingToken);
         }
     }
-
-    private void AttachClientCertificate(X509Certificate2 certificate) =>
-        httpHandler.SslOptions.ClientCertificates!.Add(certificate);
 }
