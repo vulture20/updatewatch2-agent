@@ -7,8 +7,8 @@ A .NET Worker Service, targeting both Windows and Linux from one codebase, that 
 - Periodically checks for available updates (interval configurable, with random jitter) and reports findings — plus whether a reboot is required — to the server.
 - Installs updates on remote trigger from the server, without initiating a reboot itself.
 - Sends periodic alive messages to the server.
-- Identified by hostname; authenticates to the server via a client certificate issued after manual admin approval during onboarding (not yet implemented — see this repo's open issues).
-- Windows configuration (server address/port, etc.) is stored in the registry, set via an NSIS installer; the Linux build reads an equivalent local config file.
+- Identified by hostname; authenticates to the server via a client certificate issued after manual admin approval during onboarding. On first contact this agent registers, pins the server's CA certificate (trust-on-first-use — see `Certificates/PinnedServerCertificateValidator`), and polls until an admin approves it and a certificate arrives; once received, the certificate is stored (Windows: the machine certificate store; Linux: `/etc/updatewatch2/agent.pfx`) and presented on every subsequent request. See `updatewatch2-agent#1`/`updatewatch2-server#1`.
+- Windows configuration (server address/port, etc.) is stored in the registry, set via an NSIS installer; the Linux build reads an equivalent local config file at `/etc/updatewatch2/agent.conf`. `ServerAddress` must match the server's own `UPDATEWATCH2_SERVER_HOSTNAME` (see the server repo's README/`.env.example`) — this agent validates the server's certificate SAN against it, not just that it chains to the pinned CA.
 
 See the project CLAUDE.md for the full architectural briefing, module layout, and configurable-behavior contract, and this repo's own open issues for what's still outstanding.
 
