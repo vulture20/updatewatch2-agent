@@ -1,3 +1,4 @@
+using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.UpdateCheck;
@@ -13,10 +14,17 @@ public class UpdateCheckWorker(
     AgentOptions options,
     IUpdateChecker updateChecker,
     IServerClient serverClient,
+    IAgentCertificateState certificateState,
     ILogger<UpdateCheckWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Nothing here works before RegistrationWorker has attached a
+        // client certificate (updatewatch2-agent#1) — wait rather than
+        // hitting the cert-gated report-updates endpoint and logging the
+        // same expected failure on every tick.
+        await certificateState.WaitUntilReadyAsync(stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try

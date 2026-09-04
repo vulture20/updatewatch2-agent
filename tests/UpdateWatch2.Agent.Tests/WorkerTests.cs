@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.UpdateCheck;
@@ -24,7 +25,7 @@ public class WorkerTests
 
         var worker = new UpdateCheckWorker(
             new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 10 },
-            checker, client, NullLogger<UpdateCheckWorker>.Instance);
+            checker, client, ReadyCertificateState(), NullLogger<UpdateCheckWorker>.Instance);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
@@ -33,6 +34,25 @@ public class WorkerTests
         var update = Assert.Single(reported.Updates);
         Assert.Equal("Security Update", update.Title);
         Assert.Equal("KB123", update.PackageId);
+    }
+
+    [Fact]
+    public async Task UpdateCheckWorker_makes_no_calls_until_the_certificate_state_is_ready()
+    {
+        var certificateState = new AgentCertificateState();
+        var reportedBeforeReady = false;
+        var client = new FakeServerClient(onReportUpdates: _ => reportedBeforeReady = true);
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false));
+
+        var worker = new UpdateCheckWorker(
+            new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 1 },
+            checker, client, certificateState, NullLogger<UpdateCheckWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.False(reportedBeforeReady);
     }
 
     [Fact]
@@ -48,11 +68,35 @@ public class WorkerTests
         });
 
         var worker = new HeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 60 }, client, NullLogger<HeartbeatWorker>.Instance);
+            new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), NullLogger<HeartbeatWorker>.Instance);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
         Assert.Equal(1, aliveCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_makes_no_calls_until_the_certificate_state_is_ready()
+    {
+        var certificateState = new AgentCertificateState();
+        var sentBeforeReady = false;
+        var client = new FakeServerClient(onSendAlive: () => sentBeforeReady = true);
+
+        var worker = new HeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60 }, client, certificateState, NullLogger<HeartbeatWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.False(sentBeforeReady);
+    }
+
+    private static AgentCertificateState ReadyCertificateState()
+    {
+        var state = new AgentCertificateState();
+        state.MarkReady();
+        return state;
     }
 
     private static async Task RunUntilCancelledAsync(BackgroundService worker, CancellationToken ct)
@@ -79,10 +123,14 @@ public class WorkerTests
 
     private class FakeServerClient(
         Action<ReportUpdatesRequest>? onReportUpdates = null,
-        Action? onSendAlive = null) : IServerClient
+        Action? onSendAlive = null,
+        Func<string?, RegisterResult>? onRegister = null) : IServerClient
     {
-        public Task<RegisterResult> RegisterAsync(CancellationToken ct = default) =>
-            Task.FromResult(new RegisterResult(Approved: true));
+        public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
+
+        public Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default) =>
+            Task.FromResult(onRegister?.Invoke(registrationToken)
+                ?? new RegisterResult(Approved: true, RegistrationToken: null, Certificate: null, ProtocolVersion: null));
 
         public Task SendAliveAsync(CancellationToken ct = default)
         {

@@ -1,21 +1,21 @@
 namespace UpdateWatch2.Agent.Communication;
 
-/// <summary>
-/// Talks to the server's agent-facing API. Mutual-TLS (presenting this
-/// agent's client certificate, validating the server's) isn't implemented
-/// yet — see updatewatch2-agent issue #1. The server-side endpoints this
-/// calls into don't exist yet either — see updatewatch2-server issue #3.
-/// </summary>
+/// <summary>Talks to the server's agent-facing API (mutual TLS — see updatewatch2-agent#1/updatewatch2-server#1).</summary>
 public interface IServerClient
 {
+    /// <summary>Fetches the server's CA certificate (public key only) — this agent's trust anchor. Anonymous; no cert needed.</summary>
+    Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default);
+
     /// <summary>
-    /// Registers this agent with the server. Per CLAUDE.md's onboarding
-    /// flow, a newly registered agent stays unapproved until an admin
-    /// confirms it — callers should keep retrying (with backoff) while
-    /// <see cref="RegisterResult.Approved"/> is false rather than treating
-    /// that as an error.
+    /// Registers (or polls the registration status of) this agent with the
+    /// server. Per CLAUDE.md's onboarding flow, a newly registered agent
+    /// stays unapproved until an admin confirms it — callers should keep
+    /// retrying (with backoff) while <see cref="RegisterResult.Approved"/>
+    /// is false rather than treating that as an error. Pass the token from
+    /// the previous response (or null on first contact) — see
+    /// RegistrationWorker for the full state machine this drives.
     /// </summary>
-    Task<RegisterResult> RegisterAsync(CancellationToken ct = default);
+    Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default);
 
     Task SendAliveAsync(CancellationToken ct = default);
 
