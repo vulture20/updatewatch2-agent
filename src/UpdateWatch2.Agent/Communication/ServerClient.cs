@@ -34,12 +34,13 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         return result ?? new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: null);
     }
 
-    public async Task<AliveOutcome> SendAliveAsync(CancellationToken ct = default)
+    public async Task<AliveResult> SendAliveAsync(CancellationToken ct = default)
     {
         var response = await httpClient.PostAsync(AgentApiRoutes.Alive(Environment.MachineName), content: null, ct);
         if (response.IsSuccessStatusCode)
         {
-            return AliveOutcome.Success;
+            var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
+            return new AliveResult(AliveOutcome.Success, body?.InstallRequested ?? false);
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -47,16 +48,24 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             logger.LogWarning(
                 "Alive heartbeat rejected with status {StatusCode} — this agent's certificate may no longer be trusted by the server.",
                 response.StatusCode);
-            return AliveOutcome.CertificateRejected;
+            return AliveResult.From(AliveOutcome.CertificateRejected);
         }
 
         logger.LogWarning("Alive heartbeat failed with status {StatusCode}", response.StatusCode);
-        return AliveOutcome.OtherFailure;
+        return AliveResult.From(AliveOutcome.OtherFailure);
     }
+
+    private record AliveResponseBody(bool InstallRequested);
 
     public async Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
     {
         var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.ReportUpdates(Environment.MachineName), report, JsonOptions, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task AcknowledgeInstallAsync(InstallOutcome outcome, CancellationToken ct = default)
+    {
+        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.InstallAck(Environment.MachineName), new InstallAckRequest(outcome), JsonOptions, ct);
         response.EnsureSuccessStatusCode();
     }
 

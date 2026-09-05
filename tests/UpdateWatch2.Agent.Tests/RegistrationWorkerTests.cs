@@ -231,7 +231,7 @@ public class RegistrationWorkerTests : IDisposable
                 ?? new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: null));
         }
 
-        public Task<AliveOutcome> SendAliveAsync(CancellationToken ct = default) => Task.FromResult(AliveOutcome.Success);
+        public Task<AliveResult> SendAliveAsync(CancellationToken ct = default) => Task.FromResult(AliveResult.From(AliveOutcome.Success));
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default) => Task.CompletedTask;
 
@@ -240,5 +240,7 @@ public class RegistrationWorkerTests : IDisposable
 
         public Task<RenewCertificateResult> RenewCertificateAsync(CancellationToken ct = default) =>
             Task.FromResult(new RenewCertificateResult(false, null));
+
+        public Task AcknowledgeInstallAsync(InstallOutcome outcome, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

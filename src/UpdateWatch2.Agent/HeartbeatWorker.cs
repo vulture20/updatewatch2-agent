@@ -3,6 +3,9 @@ using System.Security.Cryptography;
 using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
+using UpdateWatch2.Agent.UpdateCheck;
+using CheckerInstallOutcome = UpdateWatch2.Agent.UpdateCheck.InstallOutcome;
+using WireInstallOutcome = UpdateWatch2.Agent.Communication.InstallOutcome;
 
 namespace UpdateWatch2.Agent;
 
@@ -11,15 +14,21 @@ namespace UpdateWatch2.Agent;
 /// and, piggybacked on the same cadence, checks for a protocol-version
 /// mismatch (updatewatch2-server#3/updatewatch2-agent#2), whether this
 /// agent's client certificate needs proactive renewal
-/// (updatewatch2-server#7/updatewatch2-agent#3), and whether the server has
+/// (updatewatch2-server#7/updatewatch2-agent#3), whether the server has
 /// stopped trusting the certificate this agent is still presenting
 /// (updatewatch2-server#11/updatewatch2-agent#5 — e.g. an admin reissued
 /// it while this agent kept running, as opposed to genuinely losing it,
-/// which <see cref="RegistrationWorker"/> already handles) — reusing this
-/// existing periodic cycle rather than a one-time startup check means a
-/// server upgrade, an approaching expiry, or a mid-lifetime revocation
-/// that happens while this agent keeps running all get detected too, not
-/// just a condition already present at this agent's own last startup.
+/// which <see cref="RegistrationWorker"/> already handles), and whether an
+/// admin has remote-triggered an install (updatewatch2-server#10/
+/// updatewatch2-agent#4, driven straight off this heartbeat's own alive
+/// response rather than <see cref="UpdateCheckWorker"/>'s much coarser,
+/// jittered interval — a manual "install now" trigger is time-sensitive by
+/// definition, unlike routine update detection) — reusing this existing
+/// periodic cycle rather than a one-time startup check means a server
+/// upgrade, an approaching expiry, a mid-lifetime revocation, or a fresh
+/// install request that happens while this agent keeps running all get
+/// detected too, not just a condition already present at this agent's own
+/// last startup.
 /// </summary>
 public class HeartbeatWorker(
     AgentOptions options,
@@ -27,6 +36,7 @@ public class HeartbeatWorker(
     IAgentCertificateState certificateState,
     IClientCertificateStore certificateStore,
     SocketsHttpHandler sharedHttpHandler,
+    IUpdateChecker updateChecker,
     ILogger<HeartbeatWorker> logger) : BackgroundService
 {
     // A single 401/403 could in principle be some transient fluke this
@@ -92,10 +102,16 @@ public class HeartbeatWorker(
 
     private async Task HandleAliveAsync(CancellationToken ct)
     {
-        var outcome = await serverClient.SendAliveAsync(ct);
-        if (outcome != AliveOutcome.CertificateRejected)
+        var result = await serverClient.SendAliveAsync(ct);
+        if (result.Outcome != AliveOutcome.CertificateRejected)
         {
             _consecutiveCertificateRejections = 0;
+
+            if (result.Outcome == AliveOutcome.Success && result.InstallRequested)
+            {
+                await HandleInstallRequestAsync(ct);
+            }
+
             return;
         }
 
@@ -107,6 +123,50 @@ public class HeartbeatWorker(
 
         SelfHealRejectedCertificate();
         _consecutiveCertificateRejections = 0;
+    }
+
+    /// <summary>
+    /// Invoked inline on the heartbeat's own tick, not fired off onto a
+    /// background <see cref="Task"/> — safe today only because every
+    /// <see cref="IUpdateChecker.InstallAsync"/> implementation is still a
+    /// placeholder that returns near-instantly (the same honesty caveat
+    /// <c>WindowsUpdateChecker.CheckAsync</c> already carries). A future
+    /// real WUApiLib-backed implementation that can genuinely take minutes
+    /// would need to move this off the heartbeat's own await chain, or
+    /// every other heartbeat responsibility (renewal checks, self-heal,
+    /// the next tick's own alive call) would be delayed behind it for as
+    /// long as the install takes — not done here since nothing in this
+    /// codebase can actually take that long yet.
+    /// </summary>
+    private async Task HandleInstallRequestAsync(CancellationToken ct)
+    {
+        logger.LogInformation("Server requested an install — invoking the update installer.");
+
+        WireInstallOutcome outcome;
+        try
+        {
+            var checkerOutcome = await updateChecker.InstallAsync(ct);
+            outcome = checkerOutcome == CheckerInstallOutcome.Succeeded ? WireInstallOutcome.Succeeded : WireInstallOutcome.Failed;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Install failed");
+            outcome = WireInstallOutcome.Failed;
+        }
+
+        try
+        {
+            await serverClient.AcknowledgeInstallAsync(outcome, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Self-resolving: the server keeps reporting this install as
+            // pending until an acknowledgement actually lands, so the next
+            // heartbeat tick just retries the whole thing (including a
+            // redundant but harmless re-install) rather than needing its
+            // own dedicated retry logic here.
+            logger.LogWarning(ex, "Failed to acknowledge the install outcome to the server — it will keep reporting the install as pending.");
+        }
     }
 
     private void SelfHealRejectedCertificate()

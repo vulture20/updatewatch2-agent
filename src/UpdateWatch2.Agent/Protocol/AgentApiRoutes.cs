@@ -30,4 +30,7 @@ public static class AgentApiRoutes
 
     /// <summary>Fresh-certificate-before-expiry (updatewatch2-server#7) — authenticated by the current client certificate, not a token.</summary>
     public static string Renew(string hostname) => $"/api/agents/{Uri.EscapeDataString(hostname)}/renew";
+
+    /// <summary>Acknowledges a remote-triggered install (updatewatch2-server#10/updatewatch2-agent#4) — see HeartbeatWorker.</summary>
+    public static string InstallAck(string hostname) => $"/api/agents/{Uri.EscapeDataString(hostname)}/install-ack";
 }

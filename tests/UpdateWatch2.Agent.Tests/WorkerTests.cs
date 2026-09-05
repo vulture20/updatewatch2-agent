@@ -9,6 +9,8 @@ using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.Protocol;
 using UpdateWatch2.Agent.UpdateCheck;
+using CheckerInstallOutcome = UpdateWatch2.Agent.UpdateCheck.InstallOutcome;
+using WireInstallOutcome = UpdateWatch2.Agent.Communication.InstallOutcome;
 
 namespace UpdateWatch2.Agent.Tests;
 
@@ -275,16 +277,75 @@ public class WorkerTests
         Assert.Empty(certificateStore.DeletedThumbprints);
     }
 
+    [Fact]
+    public async Task HeartbeatWorker_invokes_the_installer_and_acknowledges_success_when_an_install_is_requested()
+    {
+        var cts = new CancellationTokenSource();
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false), onInstall: () => CheckerInstallOutcome.Succeeded);
+        WireInstallOutcome? acknowledged = null;
+
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onInstallRequested: _ => true,
+            onAcknowledgeInstall: outcome => acknowledged = outcome);
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(1, checker.InstallCallCount);
+        Assert.Equal(1, client.AcknowledgeInstallCallCount);
+        Assert.Equal(WireInstallOutcome.Succeeded, acknowledged);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_invoke_the_installer_when_no_install_is_requested()
+    {
+        var cts = new CancellationTokenSource();
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false));
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onInstallRequested: _ => false);
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, checker.InstallCallCount);
+        Assert.Equal(0, client.AcknowledgeInstallCallCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_acknowledges_failure_when_the_installer_throws()
+    {
+        var cts = new CancellationTokenSource();
+        var checker = new FakeUpdateChecker(
+            new UpdateCheckResult([], RebootRequired: false),
+            onInstall: () => throw new InvalidOperationException("simulated install failure"));
+        WireInstallOutcome? acknowledged = null;
+
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onInstallRequested: _ => true,
+            onAcknowledgeInstall: outcome => acknowledged = outcome);
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(WireInstallOutcome.Failed, acknowledged);
+    }
+
     private static HeartbeatWorker CreateHeartbeatWorker(
         AgentOptions options,
         IServerClient client,
         IAgentCertificateState certificateState,
         ILogger<HeartbeatWorker>? logger = null,
         IClientCertificateStore? certificateStore = null,
-        SocketsHttpHandler? sharedHttpHandler = null) =>
+        SocketsHttpHandler? sharedHttpHandler = null,
+        IUpdateChecker? updateChecker = null) =>
         new(options, client, certificateState,
             certificateStore ?? new FakeClientCertificateStore(existing: null),
             sharedHttpHandler ?? new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } },
+            updateChecker ?? new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false)),
             logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     private static AgentCertificateState ReadyCertificateState()
@@ -311,9 +372,17 @@ public class WorkerTests
         }
     }
 
-    private class FakeUpdateChecker(UpdateCheckResult result) : IUpdateChecker
+    private class FakeUpdateChecker(UpdateCheckResult result, Func<CheckerInstallOutcome>? onInstall = null) : IUpdateChecker
     {
+        public int InstallCallCount { get; private set; }
+
         public Task<UpdateCheckResult> CheckAsync(CancellationToken ct = default) => Task.FromResult(result);
+
+        public Task<CheckerInstallOutcome> InstallAsync(CancellationToken ct = default)
+        {
+            InstallCallCount++;
+            return onInstall is null ? Task.FromResult(CheckerInstallOutcome.Succeeded) : Task.FromResult(onInstall());
+        }
     }
 
     private class FakeServerClient(
@@ -322,11 +391,15 @@ public class WorkerTests
         Func<string?, RegisterResult>? onRegister = null,
         Func<VersionResponse>? onFetchVersion = null,
         Func<RenewCertificateResult>? onRenewCertificate = null,
-        Func<int, AliveOutcome>? onSendAliveOutcome = null) : IServerClient
+        Func<int, AliveOutcome>? onSendAliveOutcome = null,
+        Func<int, bool>? onInstallRequested = null,
+        Action<WireInstallOutcome>? onAcknowledgeInstall = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
         public int SendAliveCallCount { get; private set; }
+
+        public int AcknowledgeInstallCallCount { get; private set; }
 
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
 
@@ -334,11 +407,13 @@ public class WorkerTests
             Task.FromResult(onRegister?.Invoke(registrationToken)
                 ?? new RegisterResult(Approved: true, RegistrationToken: null, Certificate: null, ProtocolVersion: null));
 
-        public Task<AliveOutcome> SendAliveAsync(CancellationToken ct = default)
+        public Task<AliveResult> SendAliveAsync(CancellationToken ct = default)
         {
             SendAliveCallCount++;
             onSendAlive?.Invoke();
-            return Task.FromResult(onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success);
+            var outcome = onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success;
+            var installRequested = outcome == AliveOutcome.Success && (onInstallRequested?.Invoke(SendAliveCallCount) ?? false);
+            return Task.FromResult(new AliveResult(outcome, installRequested));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
@@ -354,6 +429,13 @@ public class WorkerTests
         {
             RenewCertificateCallCount++;
             return Task.FromResult(onRenewCertificate?.Invoke() ?? new RenewCertificateResult(false, null));
+        }
+
+        public Task AcknowledgeInstallAsync(WireInstallOutcome outcome, CancellationToken ct = default)
+        {
+            AcknowledgeInstallCallCount++;
+            onAcknowledgeInstall?.Invoke(outcome);
+            return Task.CompletedTask;
         }
     }
 

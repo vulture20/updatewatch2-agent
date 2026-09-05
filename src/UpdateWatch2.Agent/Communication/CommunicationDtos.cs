@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace UpdateWatch2.Agent.Communication;
 
 /// <summary>
@@ -51,3 +53,41 @@ public enum AliveOutcome
     CertificateRejected,
     OtherFailure,
 }
+
+/// <summary>
+/// Result of an alive heartbeat, now also carrying whether the server has a
+/// remote install pending for this agent (updatewatch2-server#10/
+/// updatewatch2-agent#4) alongside the existing certificate-rejection
+/// signal. <see cref="InstallRequested"/> is only ever true when
+/// <see cref="Outcome"/> is <see cref="AliveOutcome.Success"/> — a rejected
+/// or otherwise-failed call has no trustworthy body to read it from.
+/// </summary>
+public record AliveResult(AliveOutcome Outcome, bool InstallRequested)
+{
+    public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
+}
+
+/// <summary>
+/// Wire-facing mirror of the server's own <c>Updates.InstallOutcome</c> —
+/// kept a separate type from <see cref="UpdateCheck.InstallOutcome"/> (what
+/// <c>IUpdateChecker.InstallAsync</c> itself returns) even though both
+/// currently have identical shape, matching this codebase's existing
+/// DetectedUpdate/ReportedUpdate layering: checker-facing and wire-facing
+/// DTOs are mapped at the boundary (HeartbeatWorker here) rather than
+/// shared directly, so the two can diverge later without coupling the
+/// platform-specific checker layer to the wire protocol. Serialized as its
+/// name, matching the server's own [JsonConverter(JsonStringEnumConverter)]
+/// on Updates.InstallOutcome (see that type's doc comment for why —
+/// confirmed live that the default numeric encoding, while technically
+/// working end-to-end between this exact client and server, is opaque and
+/// inconsistent with this codebase's other wire-facing enums).
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum InstallOutcome
+{
+    Succeeded,
+    Failed,
+}
+
+/// <summary>Body of <c>POST .../install-ack</c> — this agent's acknowledgement that it acted on a pending install request.</summary>
+public record InstallAckRequest(InstallOutcome Outcome);
