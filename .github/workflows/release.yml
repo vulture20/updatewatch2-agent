@@ -117,12 +117,23 @@ jobs:
               installer/linux/updatewatch2-agent.service=/lib/systemd/system/updatewatch2-agent.service
           done
 
+      # Two separate artifacts, not one "linux-packages" artifact holding
+      # both files — a multi-file GitHub Actions artifact always downloads
+      # as a single zip from the run's UI, which would bundle the .deb and
+      # .rpm together there even though the final Release step below
+      # already attaches each as its own asset regardless (softprops/
+      # action-gh-release's `files:` uploads every matched file
+      # individually, never as an archive).
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-packages
-          path: |
-            dist/*.deb
-            dist/*.rpm
+          name: linux-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm
+          path: dist/*.rpm
           if-no-files-found: error
 
   release:
@@ -139,13 +150,19 @@ jobs:
           name: windows-installer
           path: dist
 
-      # linux-packages runs with continue-on-error: true — its artifact may
-      # legitimately not exist if that job failed, so this download must
+      # linux-packages runs with continue-on-error: true — its artifacts may
+      # legitimately not exist if that job failed, so these downloads must
       # not fail the release over it.
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: linux-packages
+          name: linux-deb
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: linux-rpm
           path: dist
 
       - uses: softprops/action-gh-release@v2
