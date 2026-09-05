@@ -238,13 +238,32 @@ public class WorkerTests
         using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [certificate] } };
 
         // Reject, succeed, reject — never two rejections in a row.
+        //
+        // cts.Cancel() below only unblocks RunUntilCancelledAsync's own
+        // wait, not HeartbeatWorker's loop itself — a BackgroundService
+        // runs on its own internally-managed cancellation token, created
+        // inside StartAsync, which this test's `cts` was never linked to.
+        // The loop only actually stops once RunUntilCancelledAsync's
+        // `finally` calls worker.StopAsync(), and with
+        // AliveIntervalMinutes = 0 (a zero-duration Task.Delay between
+        // ticks) one or more extra SendAliveAsync calls can race in
+        // before that happens. Call 4+ must therefore never be another
+        // CertificateRejected — that would land right after call 3's
+        // rejection and spuriously trip the two-in-a-row threshold this
+        // test asserts never fires. This raced and failed exactly that
+        // way once in CI (a real, if infrequent, flake) before this
+        // comment/fix.
         var client = new FakeServerClient(onSendAliveOutcome: callCount =>
         {
             if (callCount == 3)
             {
                 cts.Cancel();
             }
-            return callCount == 2 ? AliveOutcome.Success : AliveOutcome.CertificateRejected;
+            return callCount switch
+            {
+                1 or 3 => AliveOutcome.CertificateRejected,
+                _ => AliveOutcome.Success,
+            };
         });
 
         var worker = CreateHeartbeatWorker(
