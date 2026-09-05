@@ -10,6 +10,16 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.6.1] - 2026-09-05
+
+### Fixed
+
+- The agent's IP address never showed up in the admin overview:
+  `RegisterAsync` always sent `IpAddress: null` (an unimplemented TODO,
+  not a transient issue). Now resolved against the server's own
+  address/port, so a multi-homed machine reports the interface it
+  actually uses to reach the server rather than an arbitrary local IP.
+
 ## [0.6.0] - 2026-09-05
 
 ### Added
