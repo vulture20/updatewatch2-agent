@@ -3,8 +3,20 @@ namespace UpdateWatch2.Agent.Communication;
 /// <summary>Talks to the server's agent-facing API (mutual TLS — see updatewatch2-agent#1/updatewatch2-server#1).</summary>
 public interface IServerClient
 {
-    /// <summary>Fetches the server's CA certificate (public key only) — this agent's trust anchor. Anonymous; no cert needed.</summary>
+    /// <summary>Fetches the server's CURRENT CA certificate (public key only) — this agent's trust anchor on first contact. Anonymous; no cert needed.</summary>
     Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Fetches every root the server's CA currently knows about (current +
+    /// a still-trusted previous + a prepared-but-not-yet-active pending
+    /// one, as a PKCS7 certs-only bundle) — updatewatch2-server#6. Called
+    /// on this agent's own heartbeat cadence (see HeartbeatWorker) so a
+    /// pending root reaches this agent's trust store BEFORE an admin
+    /// activates a rotation, which is the moment the server's own TLS leaf
+    /// switches to it. Anonymous, like <see cref="FetchCaCertificateAsync"/>:
+    /// these are all public certificates, nothing secret to protect.
+    /// </summary>
+    Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Registers (or polls the registration status of) this agent with the

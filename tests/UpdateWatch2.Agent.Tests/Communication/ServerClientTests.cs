@@ -27,7 +27,7 @@ public class ServerClientTests
         // field was never populated at all.
         var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = JsonContent.Create(new { approved = false, registrationToken = "tok", certificate = (string?)null, protocolVersion = "0.5.0" }),
+            Content = JsonContent.Create(new { approved = false, registrationToken = "tok", certificate = (string?)null, protocolVersion = "0.6.0" }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
         var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);

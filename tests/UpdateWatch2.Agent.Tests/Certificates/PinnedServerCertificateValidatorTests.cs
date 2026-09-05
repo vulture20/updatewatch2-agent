@@ -66,6 +66,24 @@ public class PinnedServerCertificateValidatorTests : IDisposable
         Assert.False(validator.Validate(unrelatedLeaf));
     }
 
+    [Fact]
+    public void Accepts_a_certificate_chaining_to_either_of_two_pinned_roots_updatewatch2_server_6()
+    {
+        // The CA-rotation scenario (updatewatch2-server#6): this agent has
+        // pre-fetched a pending root ahead of activation, so it now trusts
+        // two roots at once. The server's leaf only needs to chain to
+        // whichever one actually signed it.
+        var (firstRoot, firstLeaf) = CreateCaAndLeaf("updatewatch2.example.com");
+        var (secondRoot, secondLeaf) = CreateCaAndLeaf("updatewatch2.example.com");
+        var trustStore = new FileCaTrustStore(_caPath);
+        trustStore.Save(firstRoot.Export(X509ContentType.Cert));
+        trustStore.MergeAdditional(secondRoot.Export(X509ContentType.Cert));
+        var validator = CreateValidator(serverAddress: "updatewatch2.example.com");
+
+        Assert.True(validator.Validate(firstLeaf));
+        Assert.True(validator.Validate(secondLeaf));
+    }
+
     private PinnedServerCertificateValidator CreateValidator(string serverAddress) =>
         new(new FileCaTrustStore(_caPath), new AgentOptions { ServerAddress = serverAddress },
             NullLogger<PinnedServerCertificateValidator>.Instance);
@@ -73,7 +91,14 @@ public class PinnedServerCertificateValidatorTests : IDisposable
     private static (X509Certificate2 Root, X509Certificate2 Leaf) CreateCaAndLeaf(string sanHostname)
     {
         using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var rootRequest = new CertificateRequest("CN=Test CA", rootKey, HashAlgorithmName.SHA256);
+        // A unique Subject per call, not a fixed "CN=Test CA" — two roots
+        // sharing an identical Subject can make X509Chain.Build() pick the
+        // wrong candidate to verify a leaf's signature against (the same
+        // real bug InternalCertificateAuthority's own rotation hit — see
+        // its class-level remarks), which would otherwise make any
+        // multi-root test here fail for a reason unrelated to what it's
+        // actually testing.
+        var rootRequest = new CertificateRequest($"CN=Test CA {Guid.NewGuid()}", rootKey, HashAlgorithmName.SHA256);
         rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
         using var root = rootRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1));
 

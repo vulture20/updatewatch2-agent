@@ -17,6 +17,9 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     public async Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) =>
         await httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificate, ct);
 
+    public async Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default) =>
+        await httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificateBundle, ct);
+
     public async Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default)
     {
         var request = new RegisterRequest(

@@ -175,6 +175,32 @@ public class WorkerTests
     }
 
     [Fact]
+    public async Task HeartbeatWorker_merges_a_newly_published_CA_root_into_this_agents_trust_store()
+    {
+        // updatewatch2-server#6: this agent must pre-trust a pending root
+        // BEFORE an admin activates a rotation, since activation is the
+        // exact moment the server's own leaf switches to it.
+        var cts = new CancellationTokenSource();
+        using var alreadyTrustedRoot = CreateThrowawayCertificate("already-trusted-root", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(3650));
+        using var pendingRoot = CreateThrowawayCertificate("pending-root", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(3650));
+        var trustStore = new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem"));
+        trustStore.Save(alreadyTrustedRoot.Export(X509ContentType.Cert));
+
+        var bundle = new X509Certificate2Collection { alreadyTrustedRoot, pendingRoot };
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onFetchCaCertificateBundle: () => bundle.Export(X509ContentType.Pkcs7)!);
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), caTrustStore: trustStore);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        var trusted = trustStore.LoadAll().Cast<X509Certificate2>().Select(c => c.GetCertHashString(HashAlgorithmName.SHA256)).ToHashSet();
+        Assert.Contains(alreadyTrustedRoot.GetCertHashString(HashAlgorithmName.SHA256), trusted);
+        Assert.Contains(pendingRoot.GetCertHashString(HashAlgorithmName.SHA256), trusted);
+    }
+
+    [Fact]
     public async Task HeartbeatWorker_self_heals_after_two_consecutive_certificate_rejections()
     {
         // Direct proof of updatewatch2-server#11/updatewatch2-agent#5: an
@@ -341,9 +367,11 @@ public class WorkerTests
         ILogger<HeartbeatWorker>? logger = null,
         IClientCertificateStore? certificateStore = null,
         SocketsHttpHandler? sharedHttpHandler = null,
-        IUpdateChecker? updateChecker = null) =>
+        IUpdateChecker? updateChecker = null,
+        FileCaTrustStore? caTrustStore = null) =>
         new(options, client, certificateState,
             certificateStore ?? new FakeClientCertificateStore(existing: null),
+            caTrustStore ?? new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem")),
             sharedHttpHandler ?? new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } },
             updateChecker ?? new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false)),
             logger ?? NullLogger<HeartbeatWorker>.Instance);
@@ -393,7 +421,8 @@ public class WorkerTests
         Func<RenewCertificateResult>? onRenewCertificate = null,
         Func<int, AliveOutcome>? onSendAliveOutcome = null,
         Func<int, bool>? onInstallRequested = null,
-        Action<WireInstallOutcome>? onAcknowledgeInstall = null) : IServerClient
+        Action<WireInstallOutcome>? onAcknowledgeInstall = null,
+        Func<byte[]>? onFetchCaCertificateBundle = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
@@ -402,6 +431,8 @@ public class WorkerTests
         public int AcknowledgeInstallCallCount { get; private set; }
 
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
+
+        public Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default) => Task.FromResult(onFetchCaCertificateBundle?.Invoke() ?? []);
 
         public Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default) =>
             Task.FromResult(onRegister?.Invoke(registrationToken)

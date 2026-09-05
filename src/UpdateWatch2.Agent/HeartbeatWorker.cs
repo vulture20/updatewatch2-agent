@@ -35,6 +35,7 @@ public class HeartbeatWorker(
     IServerClient serverClient,
     IAgentCertificateState certificateState,
     IClientCertificateStore certificateStore,
+    FileCaTrustStore caTrustStore,
     SocketsHttpHandler sharedHttpHandler,
     IUpdateChecker updateChecker,
     ILogger<HeartbeatWorker> logger) : BackgroundService
@@ -94,6 +95,19 @@ public class HeartbeatWorker(
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogWarning(ex, "Failed to check/renew this agent's client certificate");
+            }
+
+            // Also its own try/catch — this is purely additive trust
+            // maintenance (updatewatch2-server#6): a failure here changes
+            // nothing about this agent's current, still-working trust, it
+            // just retries picking up a pending root next tick.
+            try
+            {
+                await CheckCaTrustRefreshAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Failed to refresh this agent's trusted CA root bundle");
             }
 
             await Task.Delay(TimeSpan.FromMinutes(options.AliveIntervalMinutes), stoppingToken);
@@ -248,5 +262,24 @@ public class HeartbeatWorker(
         sharedHttpHandler.SslOptions.ClientCertificates!.Clear();
         sharedHttpHandler.SslOptions.ClientCertificates!.Add(refreshed);
         logger.LogInformation("Client certificate renewed — new expiry {NotAfter}", refreshed.NotAfter);
+    }
+
+    /// <summary>
+    /// Pre-fetches every root the server's CA currently knows about
+    /// (updatewatch2-server#6) and adds any this agent doesn't already
+    /// trust — purely additive, never removes a root, so this can never
+    /// make this agent's own trust worse, only more current ahead of an
+    /// eventual rotation activation. Piggybacked on the heartbeat cadence
+    /// like every other maintenance check here, not a one-time startup
+    /// check, so a root an admin prepares at any point during this agent's
+    /// lifetime gets picked up without a restart.
+    /// </summary>
+    private async Task CheckCaTrustRefreshAsync(CancellationToken ct)
+    {
+        var bundle = await serverClient.FetchCaCertificateBundleAsync(ct);
+        if (caTrustStore.MergeAdditional(bundle))
+        {
+            logger.LogInformation("Trusted at least one newly published CA root ahead of an eventual rotation.");
+        }
     }
 }

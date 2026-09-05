@@ -29,8 +29,8 @@ public class PinnedServerCertificateValidator(FileCaTrustStore caTrustStore, Age
             return false;
         }
 
-        var pinnedCa = caTrustStore.Load();
-        if (pinnedCa is null)
+        var pinnedRoots = caTrustStore.LoadAll();
+        if (pinnedRoots.Count == 0)
         {
             logger.LogWarning(
                 "No pinned server CA certificate yet — trusting the server on this first contact (trust-on-first-use). " +
@@ -40,9 +40,13 @@ public class PinnedServerCertificateValidator(FileCaTrustStore caTrustStore, Age
 
         var certificate2 = certificate as X509Certificate2 ?? new X509Certificate2(certificate);
 
+        // Multiple pinned roots, not just one, since CA root rotation
+        // (updatewatch2-server#6) can leave this agent trusting an old
+        // root and a newly pre-fetched pending one at the same time — the
+        // server's leaf only ever needs to chain to ANY one of them.
         using var chain = new X509Chain();
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-        chain.ChainPolicy.CustomTrustStore.Add(pinnedCa);
+        chain.ChainPolicy.CustomTrustStore.AddRange(pinnedRoots);
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         if (!chain.Build(certificate2))
         {

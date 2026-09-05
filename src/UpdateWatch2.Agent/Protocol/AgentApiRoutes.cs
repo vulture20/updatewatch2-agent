@@ -14,6 +14,9 @@ public static class AgentApiRoutes
     /// <summary>Not per-agent, and anonymous — an agent's trust anchor before it has anything else to authenticate with.</summary>
     public const string CaCertificate = "/api/agent/ca-certificate";
 
+    /// <summary>Every root the CA currently knows about, as a PKCS7 bundle (updatewatch2-server#6) — see HeartbeatWorker's periodic re-fetch.</summary>
+    public const string CaCertificateBundle = "/api/agent/ca-certificates";
+
     /// <summary>
     /// The server's four version numbers (CLAUDE.md "Four independent
     /// version numbers"). Not per-agent, and anonymous — reachable on the

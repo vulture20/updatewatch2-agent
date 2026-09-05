@@ -224,6 +224,8 @@ public class RegistrationWorkerTests : IDisposable
             return Task.FromResult(caBytes ?? []);
         }
 
+        public Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
+
         public Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default)
         {
             RegisterCallCount++;

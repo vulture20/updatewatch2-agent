@@ -10,6 +10,27 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.8.0] - 2026-09-05
+
+### Added
+
+- Supports server CA root rotation (`updatewatch2-server#6`): this agent
+  now trusts a COLLECTION of CA roots, not just one — `FileCaTrustStore`
+  can hold more than one certificate at a time, and
+  `PinnedServerCertificateValidator` accepts the server's TLS leaf if it
+  chains to any of them. On every heartbeat, `HeartbeatWorker` fetches
+  the server's full published root bundle (`GET /api/agent/ca-certificates`)
+  and adds any root this agent doesn't already trust — purely additive,
+  never removing a root on its own. This is what lets an agent pre-trust
+  a root an admin has prepared but not yet activated, so activation
+  (the moment the server's own leaf switches roots) never interrupts
+  this agent's connectivity, provided it already had at least one
+  heartbeat's worth of time to pick the new root up first.
+
+### Changed
+
+- Protocol version bumped to `0.6.0`, matching the server.
+
 ## [0.7.0] - 2026-09-05
 
 ### Added
