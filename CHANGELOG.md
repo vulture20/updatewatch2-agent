@@ -10,6 +10,18 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.6.2] - 2026-09-05
+
+### Changed
+
+- The reported operating system is no longer just the generic
+  `RuntimeInformation.OSDescription` string on Windows (e.g. "Microsoft
+  Windows 10.0.26200") — a friendlier name (e.g. "Windows 11 25H2",
+  "Windows Server 2025 Standard") is now shown ahead of it, with the raw
+  value kept in parentheses. Correctly distinguishes Windows 10 from 11
+  by build number, not the registry's `ProductName` value, which is
+  known to still read "Windows 10 ..." on genuine Windows 11 installs.
+
 ## [0.6.1] - 2026-09-05
 
 ### Fixed

@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using UpdateWatch2.Agent.Protocol;
 
@@ -22,7 +21,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     {
         var request = new RegisterRequest(
             DnsName: System.Net.Dns.GetHostEntry(Environment.MachineName).HostName,
-            OperatingSystem: RuntimeInformation.OSDescription,
+            OperatingSystem: OperatingSystemDescriber.Describe(),
             IpAddress: ResolveOutboundIpAddress(),
             AgentVersion: AgentVersion.Current,
             ProtocolVersion: ProtocolVersion.Current,
