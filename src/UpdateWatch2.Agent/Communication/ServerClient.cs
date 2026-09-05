@@ -20,7 +20,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     public async Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default)
     {
         var request = new RegisterRequest(
-            DnsName: System.Net.Dns.GetHostEntry(Environment.MachineName).HostName,
+            DnsName: ResolveDnsName(),
             OperatingSystem: OperatingSystemDescriber.Describe(),
             IpAddress: ResolveOutboundIpAddress(),
             AgentVersion: AgentVersion.Current,
@@ -36,7 +36,17 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
     public async Task<AliveResult> SendAliveAsync(CancellationToken ct = default)
     {
-        var response = await httpClient.PostAsync(AgentApiRoutes.Alive(Environment.MachineName), content: null, ct);
+        // Re-resolved fresh on every heartbeat, not just at registration —
+        // this is the only channel that can ever update these fields after
+        // an agent is certified, since the server's RegisterAsync never
+        // runs again for it (updatewatch2-agent#6).
+        var request = new AliveRequest(
+            DnsName: ResolveDnsName(),
+            OperatingSystem: OperatingSystemDescriber.Describe(),
+            IpAddress: ResolveOutboundIpAddress(),
+            AgentVersion: AgentVersion.Current);
+
+        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.Alive(Environment.MachineName), request, JsonOptions, ct);
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
@@ -96,6 +106,9 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     }
 
     private record RenewCertificateBody(string? Certificate);
+
+    /// <summary>Shared by RegisterAsync and SendAliveAsync so both report the same DNS name resolution.</summary>
+    private static string ResolveDnsName() => System.Net.Dns.GetHostEntry(Environment.MachineName).HostName;
 
     /// <summary>
     /// This machine's outbound-facing IP address toward the configured

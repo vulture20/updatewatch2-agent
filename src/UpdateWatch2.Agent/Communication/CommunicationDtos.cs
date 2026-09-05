@@ -13,6 +13,17 @@ namespace UpdateWatch2.Agent.Communication;
 public record RegisterRequest(string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion, string ProtocolVersion, string? RegistrationToken);
 
 /// <summary>
+/// Body of an alive heartbeat (updatewatch2-agent#6) — same self-reported
+/// metadata as <see cref="RegisterRequest"/> minus the fields that only
+/// make sense at onboarding (ProtocolVersion, RegistrationToken). Sent on
+/// every heartbeat because <c>AgentRegistrationService.RegisterAsync</c>
+/// (server-side) never runs again for an already-certified agent, so this
+/// is the only remaining channel to keep IP/OS/DNS/version current after
+/// approval — see this type's server-side counterpart, <c>AgentAliveRequest</c>.
+/// </summary>
+public record AliveRequest(string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion);
+
+/// <summary>
 /// Property names match the server's camelCase JSON output field-for-field
 /// (case-insensitively, via JsonSerializerDefaults.Web — see ServerClient)
 /// except <c>Certificate</c>, which mirrors the server's "certificate"

@@ -10,6 +10,22 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.7.0] - 2026-09-05
+
+### Added
+
+- Every alive heartbeat now reports this agent's current
+  `DnsName`/`OperatingSystem`/`IpAddress`/`AgentVersion` (`updatewatch2-agent#6`),
+  re-resolved fresh each time rather than only at registration. Closes
+  the gap where an already-certified agent's metadata in the admin
+  overview was frozen at whatever it reported at first contact — the
+  server never re-runs registration for a certified agent, so the
+  heartbeat is the only remaining channel to keep it current.
+
+### Changed
+
+- Protocol version bumped to `0.5.0`, matching the server.
+
 ## [0.6.2] - 2026-09-05
 
 ### Changed

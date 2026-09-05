@@ -27,7 +27,7 @@ public class ServerClientTests
         // field was never populated at all.
         var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = JsonContent.Create(new { approved = false, registrationToken = "tok", certificate = (string?)null, protocolVersion = "0.4.0" }),
+            Content = JsonContent.Create(new { approved = false, registrationToken = "tok", certificate = (string?)null, protocolVersion = "0.5.0" }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
         var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
@@ -38,6 +38,29 @@ public class ServerClientTests
         using var doc = JsonDocument.Parse(handler.LastRequestBody!);
         var ip = doc.RootElement.GetProperty("ipAddress").GetString();
         Assert.False(string.IsNullOrEmpty(ip));
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_reports_current_self_reported_metadata()
+    {
+        // updatewatch2-agent#6: the heartbeat, not just registration, is
+        // what keeps IP/OS/DNS/version current for an already-certified
+        // agent — RegisterAsync never runs again for one.
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        await client.SendAliveAsync();
+
+        Assert.NotNull(handler.LastRequestBody);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.False(string.IsNullOrEmpty(doc.RootElement.GetProperty("ipAddress").GetString()));
+        Assert.False(string.IsNullOrEmpty(doc.RootElement.GetProperty("dnsName").GetString()));
+        Assert.False(string.IsNullOrEmpty(doc.RootElement.GetProperty("operatingSystem").GetString()));
+        Assert.Equal(UpdateWatch2.Agent.AgentVersion.Current, doc.RootElement.GetProperty("agentVersion").GetString());
     }
 
     private class CapturingHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
