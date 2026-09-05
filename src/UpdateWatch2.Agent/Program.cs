@@ -10,6 +10,7 @@ using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.Configuration.Linux;
 using UpdateWatch2.Agent.Configuration.Windows;
 using UpdateWatch2.Agent.UpdateCheck;
+using UpdateWatch2.Agent.UpdateCheck.Windows;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -46,6 +47,7 @@ if (Enum.TryParse<LogLevel>(MapLogLevel(logLevelFromConfig ?? "INFO"), out var m
 // Certificates/{Windows,Linux}/*ClientCertificateStore.
 if (OperatingSystem.IsWindows())
 {
+    builder.Services.AddSingleton<IWindowsUpdateSession, WuaUpdateSession>();
     builder.Services.AddSingleton<IUpdateChecker, WindowsUpdateChecker>();
     builder.Services.AddSingleton<IClientCertificateStore, WindowsClientCertificateStore>();
     builder.Logging.AddEventLog(new EventLogSettings { SourceName = "UpdateWatch2 Agent" });
