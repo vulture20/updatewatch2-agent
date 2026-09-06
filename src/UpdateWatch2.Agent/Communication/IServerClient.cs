@@ -39,6 +39,9 @@ public interface IServerClient
     /// <see cref="AliveResult.InstallRequested"/> carries whether the
     /// server has a remote install pending for this agent
     /// (updatewatch2-server#10/updatewatch2-agent#4).
+    /// <see cref="AliveResult.AgentUpdateAvailable"/> carries a newer agent
+    /// release to self-update to, if one is known and enabled server-side
+    /// (updatewatch2-server#14/updatewatch2-agent#14).
     /// </summary>
     Task<AliveResult> SendAliveAsync(CancellationToken ct = default);
 
@@ -67,4 +70,16 @@ public interface IServerClient
     /// connection is negotiated.
     /// </summary>
     Task<RenewCertificateResult> RenewCertificateAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Downloads <paramref name="downloadUrl"/> (an <see cref="AgentUpdateAssetOffer.DownloadUrl"/>
+    /// from an <see cref="AliveResult.AgentUpdateAvailable"/> offer — always
+    /// a path on this same server, mTLS-gated the same as every other
+    /// agent-facing route) to <paramref name="destinationPath"/>, overwriting
+    /// it if it already exists. Used by <c>SelfUpdate.AgentSelfUpdateService</c>
+    /// (updatewatch2-agent#14) — must be called on the shared, cert-attached
+    /// client (see HeartbeatWorker), never a bootstrap one, same as
+    /// <see cref="RenewCertificateAsync"/>.
+    /// </summary>
+    Task DownloadFileAsync(string downloadUrl, string destinationPath, CancellationToken ct = default);
 }

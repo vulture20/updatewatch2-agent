@@ -66,14 +66,40 @@ public enum AliveOutcome
 }
 
 /// <summary>
+/// One downloadable asset offered on an <see cref="AliveResult.AgentUpdateAvailable"/>
+/// offer — mirrors the server's own <c>AgentUpdateAssetOffer</c> field-for-
+/// field. <see cref="DownloadUrl"/> is always a path on THIS server
+/// (<c>/api/agent/updates/{fileName}</c>), never GitHub directly — see
+/// updatewatch2-server#14's pinned design decision.
+/// </summary>
+public record AgentUpdateAssetOffer(string DownloadUrl, string Sha256, long SizeBytes);
+
+/// <summary>
+/// Surfaced on the <c>alive</c> heartbeat response once a newer agent
+/// version than this agent's own <see cref="UpdateWatch2.Agent.AgentVersion.Current"/>
+/// is known and agent auto-update is enabled server-side
+/// (updatewatch2-server#14/updatewatch2-agent#14) — mirrors the server's
+/// own <c>AgentUpdateOffer</c>. Each asset slot is independently nullable —
+/// a release might not (yet) carry every platform's package. See
+/// <c>SelfUpdate.IAgentSelfUpdater</c> for how this agent reacts to it.
+/// </summary>
+public record AgentUpdateOffer(
+    string Version,
+    AgentUpdateAssetOffer? WindowsInstaller,
+    AgentUpdateAssetOffer? LinuxDeb,
+    AgentUpdateAssetOffer? LinuxRpm);
+
+/// <summary>
 /// Result of an alive heartbeat, now also carrying whether the server has a
 /// remote install pending for this agent (updatewatch2-server#10/
-/// updatewatch2-agent#4) alongside the existing certificate-rejection
-/// signal. <see cref="InstallRequested"/> is only ever true when
+/// updatewatch2-agent#4) and whether a newer agent version is available
+/// (updatewatch2-server#14/updatewatch2-agent#14), alongside the existing
+/// certificate-rejection signal. <see cref="InstallRequested"/> and
+/// <see cref="AgentUpdateAvailable"/> are only ever meaningful when
 /// <see cref="Outcome"/> is <see cref="AliveOutcome.Success"/> — a rejected
-/// or otherwise-failed call has no trustworthy body to read it from.
+/// or otherwise-failed call has no trustworthy body to read them from.
 /// </summary>
-public record AliveResult(AliveOutcome Outcome, bool InstallRequested)
+public record AliveResult(AliveOutcome Outcome, bool InstallRequested, AgentUpdateOffer? AgentUpdateAvailable = null)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }

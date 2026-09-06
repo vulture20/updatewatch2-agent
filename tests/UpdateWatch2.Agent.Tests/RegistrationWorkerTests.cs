@@ -244,5 +244,7 @@ public class RegistrationWorkerTests : IDisposable
             Task.FromResult(new RenewCertificateResult(false, null));
 
         public Task AcknowledgeInstallAsync(InstallOutcome outcome, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task DownloadFileAsync(string downloadUrl, string destinationPath, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

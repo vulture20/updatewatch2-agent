@@ -8,6 +8,7 @@ using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.Protocol;
+using UpdateWatch2.Agent.SelfUpdate;
 using UpdateWatch2.Agent.UpdateCheck;
 using CheckerInstallOutcome = UpdateWatch2.Agent.UpdateCheck.InstallOutcome;
 using WireInstallOutcome = UpdateWatch2.Agent.Communication.InstallOutcome;
@@ -360,6 +361,72 @@ public class WorkerTests
         Assert.Equal(WireInstallOutcome.Failed, acknowledged);
     }
 
+    [Fact]
+    public async Task HeartbeatWorker_applies_a_self_update_when_the_server_offers_a_newer_agent_version()
+    {
+        var cts = new CancellationTokenSource();
+        var offer = new AgentUpdateOffer("99.0.0", new AgentUpdateAssetOffer("/api/agent/updates/setup.exe", "abc", 1), null, null);
+        AgentUpdateOffer? appliedWith = null;
+
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onAgentUpdateAvailable: _ => offer);
+        var selfUpdater = new FakeAgentSelfUpdater(onApply: o =>
+        {
+            appliedWith = o;
+            return SelfUpdateOutcome.Applied;
+        });
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), selfUpdater: selfUpdater);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(1, selfUpdater.ApplyCallCount);
+        Assert.Same(offer, appliedWith);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_invoke_the_self_updater_when_no_agent_update_is_available()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onAgentUpdateAvailable: _ => null);
+        var selfUpdater = new FakeAgentSelfUpdater();
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), selfUpdater: selfUpdater);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, selfUpdater.ApplyCallCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_swallows_an_unexpected_self_update_failure_without_stopping_the_loop()
+    {
+        var cts = new CancellationTokenSource();
+        var aliveCount = 0;
+        var offer = new AgentUpdateOffer("99.0.0", new AgentUpdateAssetOffer("/api/agent/updates/setup.exe", "abc", 1), null, null);
+
+        var client = new FakeServerClient(
+            onSendAlive: () =>
+            {
+                aliveCount++;
+                if (aliveCount >= 2)
+                {
+                    cts.Cancel();
+                }
+            },
+            onAgentUpdateAvailable: _ => offer);
+        var selfUpdater = new FakeAgentSelfUpdater(onApply: _ => throw new InvalidOperationException("simulated self-update failure"));
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 0 }, client, ReadyCertificateState(), selfUpdater: selfUpdater);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        // The next tick's alive call still happened — a self-update failure
+        // must not take the whole heartbeat loop down with it.
+        Assert.True(aliveCount >= 2);
+    }
+
     private static HeartbeatWorker CreateHeartbeatWorker(
         AgentOptions options,
         IServerClient client,
@@ -368,12 +435,14 @@ public class WorkerTests
         IClientCertificateStore? certificateStore = null,
         SocketsHttpHandler? sharedHttpHandler = null,
         IUpdateChecker? updateChecker = null,
-        FileCaTrustStore? caTrustStore = null) =>
+        FileCaTrustStore? caTrustStore = null,
+        IAgentSelfUpdater? selfUpdater = null) =>
         new(options, client, certificateState,
             certificateStore ?? new FakeClientCertificateStore(existing: null),
             caTrustStore ?? new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem")),
             sharedHttpHandler ?? new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } },
             updateChecker ?? new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false)),
+            selfUpdater ?? new FakeAgentSelfUpdater(),
             logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     private static AgentCertificateState ReadyCertificateState()
@@ -422,13 +491,17 @@ public class WorkerTests
         Func<int, AliveOutcome>? onSendAliveOutcome = null,
         Func<int, bool>? onInstallRequested = null,
         Action<WireInstallOutcome>? onAcknowledgeInstall = null,
-        Func<byte[]>? onFetchCaCertificateBundle = null) : IServerClient
+        Func<byte[]>? onFetchCaCertificateBundle = null,
+        Func<int, AgentUpdateOffer?>? onAgentUpdateAvailable = null,
+        Func<string, string, Task>? onDownloadFile = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
         public int SendAliveCallCount { get; private set; }
 
         public int AcknowledgeInstallCallCount { get; private set; }
+
+        public int DownloadFileCallCount { get; private set; }
 
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
 
@@ -444,7 +517,8 @@ public class WorkerTests
             onSendAlive?.Invoke();
             var outcome = onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success;
             var installRequested = outcome == AliveOutcome.Success && (onInstallRequested?.Invoke(SendAliveCallCount) ?? false);
-            return Task.FromResult(new AliveResult(outcome, installRequested));
+            var agentUpdateAvailable = outcome == AliveOutcome.Success ? onAgentUpdateAvailable?.Invoke(SendAliveCallCount) : null;
+            return Task.FromResult(new AliveResult(outcome, installRequested, agentUpdateAvailable));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
@@ -467,6 +541,28 @@ public class WorkerTests
             AcknowledgeInstallCallCount++;
             onAcknowledgeInstall?.Invoke(outcome);
             return Task.CompletedTask;
+        }
+
+        public Task DownloadFileAsync(string downloadUrl, string destinationPath, CancellationToken ct = default)
+        {
+            DownloadFileCallCount++;
+            return onDownloadFile?.Invoke(downloadUrl, destinationPath) ?? Task.CompletedTask;
+        }
+    }
+
+    private class FakeAgentSelfUpdater(Func<AgentUpdateOffer, SelfUpdateOutcome>? onApply = null) : IAgentSelfUpdater
+    {
+        public int ApplyCallCount { get; private set; }
+
+        public Task<SelfUpdateOutcome> ApplyAsync(AgentUpdateOffer? offer, CancellationToken ct = default)
+        {
+            if (offer is null)
+            {
+                return Task.FromResult(SelfUpdateOutcome.NotApplicable);
+            }
+
+            ApplyCallCount++;
+            return Task.FromResult(onApply?.Invoke(offer) ?? SelfUpdateOutcome.Applied);
         }
     }
 

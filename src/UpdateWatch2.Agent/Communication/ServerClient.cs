@@ -53,7 +53,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
-            return new AliveResult(AliveOutcome.Success, body?.InstallRequested ?? false);
+            return new AliveResult(AliveOutcome.Success, body?.InstallRequested ?? false, body?.AgentUpdateAvailable);
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -68,7 +68,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         return AliveResult.From(AliveOutcome.OtherFailure);
     }
 
-    private record AliveResponseBody(bool InstallRequested);
+    private record AliveResponseBody(bool InstallRequested, AgentUpdateOffer? AgentUpdateAvailable);
 
     public async Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
     {
@@ -109,6 +109,16 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     }
 
     private record RenewCertificateBody(string? Certificate);
+
+    public async Task DownloadFileAsync(string downloadUrl, string destinationPath, CancellationToken ct = default)
+    {
+        using var response = await httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+
+        await using var source = await response.Content.ReadAsStreamAsync(ct);
+        await using var destination = File.Create(destinationPath);
+        await source.CopyToAsync(destination, ct);
+    }
 
     /// <summary>Shared by RegisterAsync and SendAliveAsync so both report the same DNS name resolution.</summary>
     private static string ResolveDnsName() => System.Net.Dns.GetHostEntry(Environment.MachineName).HostName;

@@ -9,6 +9,9 @@ using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.Configuration.Linux;
 using UpdateWatch2.Agent.Configuration.Windows;
+using UpdateWatch2.Agent.SelfUpdate;
+using UpdateWatch2.Agent.SelfUpdate.Linux;
+using UpdateWatch2.Agent.SelfUpdate.Windows;
 using UpdateWatch2.Agent.UpdateCheck;
 using UpdateWatch2.Agent.UpdateCheck.Linux;
 using UpdateWatch2.Agent.UpdateCheck.Windows;
@@ -46,11 +49,26 @@ if (Enum.TryParse<LogLevel>(MapLogLevel(logLevelFromConfig ?? "INFO"), out var m
 // Where this agent's own client certificate lives, once issued — genuinely
 // platform-specific storage (machine cert store vs. a file), see
 // Certificates/{Windows,Linux}/*ClientCertificateStore.
+// Where a self-update download is staged before IPlatformUpdateApplier
+// applies it (updatewatch2-agent#14) — same "fixed platform-appropriate
+// path outside AgentOptions' scalar config" pattern as caTrustStorePath
+// below.
+var selfUpdateStagingDirectory = OperatingSystem.IsWindows()
+    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "UpdateWatch2", "agent-update")
+    : "/var/lib/updatewatch2/agent-update";
+
 if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<IWindowsUpdateSession, WuaUpdateSession>();
     builder.Services.AddSingleton<IUpdateChecker, WindowsUpdateChecker>();
     builder.Services.AddSingleton<IClientCertificateStore, WindowsClientCertificateStore>();
+    builder.Services.AddSingleton<IPlatformUpdateApplier, WindowsInstallerApplier>();
+    builder.Services.AddSingleton<IAgentSelfUpdater>(sp => new AgentSelfUpdateService(
+        AgentUpdateAssetKind.WindowsInstaller,
+        selfUpdateStagingDirectory,
+        sp.GetRequiredService<IServerClient>(),
+        sp.GetRequiredService<IPlatformUpdateApplier>(),
+        sp.GetRequiredService<ILogger<AgentSelfUpdateService>>()));
     builder.Logging.AddEventLog(new EventLogSettings { SourceName = "UpdateWatch2 Agent" });
 }
 else if (OperatingSystem.IsLinux())
@@ -60,16 +78,44 @@ else if (OperatingSystem.IsLinux())
         case LinuxPackageManagerKind.Apt:
             builder.Services.AddSingleton<ILinuxUpdateSession, AptUpdateSession>();
             builder.Services.AddSingleton<IUpdateChecker, LinuxUpdateChecker>();
+            // CA1416 can't see through this lambda to the OperatingSystem.IsLinux()
+            // guard around the whole else-if branch it's registered in — it only
+            // ever actually runs when DI resolves IPlatformUpdateApplier, which
+            // only happens on Linux, since that's the only branch that registers it.
+#pragma warning disable CA1416
+            builder.Services.AddSingleton<IPlatformUpdateApplier>(sp => new LinuxPackageApplier(
+                AgentUpdateAssetKind.LinuxDeb, sp.GetRequiredService<ILogger<LinuxPackageApplier>>()));
+#pragma warning restore CA1416
+            builder.Services.AddSingleton<IAgentSelfUpdater>(sp => new AgentSelfUpdateService(
+                AgentUpdateAssetKind.LinuxDeb,
+                selfUpdateStagingDirectory,
+                sp.GetRequiredService<IServerClient>(),
+                sp.GetRequiredService<IPlatformUpdateApplier>(),
+                sp.GetRequiredService<ILogger<AgentSelfUpdateService>>()));
             break;
         case LinuxPackageManagerKind.Dnf:
             builder.Services.AddSingleton<ILinuxUpdateSession, DnfUpdateSession>();
             builder.Services.AddSingleton<IUpdateChecker, LinuxUpdateChecker>();
+            // Same CA1416/lambda situation as the Apt case above.
+#pragma warning disable CA1416
+            builder.Services.AddSingleton<IPlatformUpdateApplier>(sp => new LinuxPackageApplier(
+                AgentUpdateAssetKind.LinuxRpm, sp.GetRequiredService<ILogger<LinuxPackageApplier>>()));
+#pragma warning restore CA1416
+            builder.Services.AddSingleton<IAgentSelfUpdater>(sp => new AgentSelfUpdateService(
+                AgentUpdateAssetKind.LinuxRpm,
+                selfUpdateStagingDirectory,
+                sp.GetRequiredService<IServerClient>(),
+                sp.GetRequiredService<IPlatformUpdateApplier>(),
+                sp.GetRequiredService<ILogger<AgentSelfUpdateService>>()));
             break;
         default:
             // No known package manager binary found (e.g. a minimal or
             // unsupported distro) — same fallback this platform used
-            // unconditionally before updatewatch2-agent#8.
+            // unconditionally before updatewatch2-agent#8. No known
+            // package format also means no safe way to self-update
+            // (updatewatch2-agent#14).
             builder.Services.AddSingleton<IUpdateChecker, NoOpUpdateChecker>();
+            builder.Services.AddSingleton<IAgentSelfUpdater, NoOpAgentSelfUpdater>();
             break;
     }
 

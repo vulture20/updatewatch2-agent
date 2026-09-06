@@ -63,6 +63,81 @@ public class ServerClientTests
         Assert.Equal(UpdateWatch2.Agent.AgentVersion.Current, doc.RootElement.GetProperty("agentVersion").GetString());
     }
 
+    [Fact]
+    public async Task SendAliveAsync_parses_an_agent_update_offer_when_the_server_includes_one()
+    {
+        // updatewatch2-agent#14: the offer's shape (nested asset objects,
+        // each independently nullable) must round-trip through
+        // JsonSerializerDefaults.Web's case-insensitive camelCase matching
+        // the same way installRequested/AliveRequest's other fields do.
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                installRequested = false,
+                agentUpdateAvailable = new
+                {
+                    version = "99.0.0",
+                    windowsInstaller = new { downloadUrl = "/api/agent/updates/setup.exe", sha256 = "abc", sizeBytes = 123 },
+                    linuxDeb = (object?)null,
+                    linuxRpm = (object?)null,
+                },
+            }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.NotNull(result.AgentUpdateAvailable);
+        Assert.Equal("99.0.0", result.AgentUpdateAvailable!.Version);
+        Assert.NotNull(result.AgentUpdateAvailable.WindowsInstaller);
+        Assert.Equal("/api/agent/updates/setup.exe", result.AgentUpdateAvailable.WindowsInstaller!.DownloadUrl);
+        Assert.Null(result.AgentUpdateAvailable.LinuxDeb);
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_reports_no_agent_update_when_the_server_omits_the_field()
+    {
+        // An agent build this old still round-trips fine against a server
+        // that doesn't send agentUpdateAvailable at all — the field is
+        // additive, per the same reasoning installRequested's own addition
+        // already established.
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.Null(result.AgentUpdateAvailable);
+    }
+
+    [Fact]
+    public async Task DownloadFileAsync_writes_the_response_body_to_the_destination_path()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("fake-binary-content"),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var destinationPath = Path.Combine(Path.GetTempPath(), $"uw2-agent-download-test-{Guid.NewGuid()}");
+
+        try
+        {
+            await client.DownloadFileAsync("/api/agent/updates/setup.exe", destinationPath);
+
+            Assert.Equal("fake-binary-content", await File.ReadAllTextAsync(destinationPath));
+        }
+        finally
+        {
+            File.Delete(destinationPath);
+        }
+    }
+
     private class CapturingHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public string? LastRequestBody { get; private set; }

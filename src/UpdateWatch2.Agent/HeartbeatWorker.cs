@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
+using UpdateWatch2.Agent.SelfUpdate;
 using UpdateWatch2.Agent.UpdateCheck;
 using CheckerInstallOutcome = UpdateWatch2.Agent.UpdateCheck.InstallOutcome;
 using WireInstallOutcome = UpdateWatch2.Agent.Communication.InstallOutcome;
@@ -23,12 +24,15 @@ namespace UpdateWatch2.Agent;
 /// updatewatch2-agent#4, driven straight off this heartbeat's own alive
 /// response rather than <see cref="UpdateCheckWorker"/>'s much coarser,
 /// jittered interval — a manual "install now" trigger is time-sensitive by
-/// definition, unlike routine update detection) — reusing this existing
-/// periodic cycle rather than a one-time startup check means a server
-/// upgrade, an approaching expiry, a mid-lifetime revocation, or a fresh
-/// install request that happens while this agent keeps running all get
-/// detected too, not just a condition already present at this agent's own
-/// last startup.
+/// definition, unlike routine update detection), and whether the server has
+/// offered a newer agent release to self-update to
+/// (updatewatch2-server#14/updatewatch2-agent#14, same reasoning: also
+/// time-sensitive and also driven off this same alive response) — reusing
+/// this existing periodic cycle rather than a one-time startup check means
+/// a server upgrade, an approaching expiry, a mid-lifetime revocation, a
+/// fresh install request, or a fresh agent release that happens while this
+/// agent keeps running all get detected too, not just a condition already
+/// present at this agent's own last startup.
 /// </summary>
 public class HeartbeatWorker(
     AgentOptions options,
@@ -38,6 +42,7 @@ public class HeartbeatWorker(
     FileCaTrustStore caTrustStore,
     SocketsHttpHandler sharedHttpHandler,
     IUpdateChecker updateChecker,
+    IAgentSelfUpdater selfUpdater,
     ILogger<HeartbeatWorker> logger) : BackgroundService
 {
     // A single 401/403 could in principle be some transient fluke this
@@ -121,9 +126,17 @@ public class HeartbeatWorker(
         {
             _consecutiveCertificateRejections = 0;
 
-            if (result.Outcome == AliveOutcome.Success && result.InstallRequested)
+            if (result.Outcome == AliveOutcome.Success)
             {
-                await HandleInstallRequestAsync(ct);
+                if (result.InstallRequested)
+                {
+                    await HandleInstallRequestAsync(ct);
+                }
+
+                if (result.AgentUpdateAvailable is not null)
+                {
+                    await HandleSelfUpdateAsync(result.AgentUpdateAvailable, ct);
+                }
             }
 
             return;
@@ -180,6 +193,43 @@ public class HeartbeatWorker(
             // redundant but harmless re-install) rather than needing its
             // own dedicated retry logic here.
             logger.LogWarning(ex, "Failed to acknowledge the install outcome to the server — it will keep reporting the install as pending.");
+        }
+    }
+
+    /// <summary>
+    /// Invoked inline on the heartbeat's own tick, same as
+    /// <see cref="HandleInstallRequestAsync"/> — a fresh agent release is
+    /// just as time-sensitive as a manually-triggered install, not
+    /// something to defer to <see cref="UpdateCheckWorker"/>'s coarser
+    /// cadence. No acknowledgement call back to the server: see
+    /// <see cref="IAgentSelfUpdater"/>'s doc comment for why the offer
+    /// naturally stops being sent once this agent's next successful
+    /// heartbeat (after whatever <see cref="SelfUpdateOutcome.Applied"/>
+    /// actually triggers — a service restart on either platform) reports
+    /// its new <c>AgentVersion</c>.
+    /// </summary>
+    private async Task HandleSelfUpdateAsync(AgentUpdateOffer offer, CancellationToken ct)
+    {
+        try
+        {
+            var outcome = await selfUpdater.ApplyAsync(offer, ct);
+            switch (outcome)
+            {
+                case SelfUpdateOutcome.Applied:
+                    logger.LogInformation(
+                        "Applied a self-update to agent version {Version} — a platform-specific restart to pick it up should follow shortly.",
+                        offer.Version);
+                    break;
+                case SelfUpdateOutcome.NotApplicable:
+                    break;
+                default:
+                    logger.LogWarning("Self-update to agent version {Version} did not succeed: {Outcome}", offer.Version, outcome);
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Self-update failed unexpectedly.");
         }
     }
 
