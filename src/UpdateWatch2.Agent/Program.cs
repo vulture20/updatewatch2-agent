@@ -10,6 +10,7 @@ using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.Configuration.Linux;
 using UpdateWatch2.Agent.Configuration.Windows;
 using UpdateWatch2.Agent.UpdateCheck;
+using UpdateWatch2.Agent.UpdateCheck.Linux;
 using UpdateWatch2.Agent.UpdateCheck.Windows;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -54,8 +55,24 @@ if (OperatingSystem.IsWindows())
 }
 else if (OperatingSystem.IsLinux())
 {
-    // TODO: register a real Linux checker once one exists (CLAUDE.md section 4.1).
-    builder.Services.AddSingleton<IUpdateChecker, NoOpUpdateChecker>();
+    switch (LinuxPackageManagerDetector.Detect())
+    {
+        case LinuxPackageManagerKind.Apt:
+            builder.Services.AddSingleton<ILinuxUpdateSession, AptUpdateSession>();
+            builder.Services.AddSingleton<IUpdateChecker, LinuxUpdateChecker>();
+            break;
+        case LinuxPackageManagerKind.Dnf:
+            builder.Services.AddSingleton<ILinuxUpdateSession, DnfUpdateSession>();
+            builder.Services.AddSingleton<IUpdateChecker, LinuxUpdateChecker>();
+            break;
+        default:
+            // No known package manager binary found (e.g. a minimal or
+            // unsupported distro) — same fallback this platform used
+            // unconditionally before updatewatch2-agent#8.
+            builder.Services.AddSingleton<IUpdateChecker, NoOpUpdateChecker>();
+            break;
+    }
+
     builder.Services.AddSingleton<IClientCertificateStore, LinuxClientCertificateStore>();
 }
 else
