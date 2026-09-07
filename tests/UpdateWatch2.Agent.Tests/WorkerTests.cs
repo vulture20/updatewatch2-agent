@@ -113,6 +113,22 @@ public class WorkerTests
         var callCount = 0;
         var client = new FakeServerClient(onSendAlive: () =>
         {
+            // Same race RunUntilCancelledAsync's own remarks (and
+            // HeartbeatWorker_resets_the_rejection_count_on_a_successful_heartbeat_in_between's)
+            // already document: cts.Cancel() below only unblocks that
+            // helper's wait, not this worker's own internally-managed
+            // loop — with AliveIntervalMinutes = 0 (a zero-duration
+            // Task.Delay between ticks), one or more extra SendAliveAsync
+            // calls can race in before StopAsync() actually takes effect.
+            // Bailing out here without incrementing keeps callCount an
+            // exact, non-flaky count of the calls that mattered instead of
+            // however many extra ticks happened to race in — caught live
+            // in CI (callCount 60 instead of 2), not hypothetically.
+            if (cts.IsCancellationRequested)
+            {
+                throw new OperationCanceledException();
+            }
+
             callCount++;
             if (callCount == 1)
             {
