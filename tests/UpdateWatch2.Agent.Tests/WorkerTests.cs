@@ -412,6 +412,42 @@ public class WorkerTests
     }
 
     [Fact]
+    public async Task HeartbeatWorker_refreshes_the_update_list_immediately_after_a_successful_install()
+    {
+        var cts = new CancellationTokenSource();
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false), onInstall: () => CheckerInstallOutcome.Succeeded);
+        var trigger = new FakeUpdateCheckTrigger();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onInstallRequested: _ => true);
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(),
+            updateChecker: checker, updateCheckTrigger: trigger);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(1, trigger.CallCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_refresh_the_update_list_when_the_install_fails()
+    {
+        var cts = new CancellationTokenSource();
+        var checker = new FakeUpdateChecker(
+            new UpdateCheckResult([], RebootRequired: false),
+            onInstall: () => CheckerInstallOutcome.Failed);
+        var trigger = new FakeUpdateCheckTrigger();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onInstallRequested: _ => true);
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(),
+            updateChecker: checker, updateCheckTrigger: trigger);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, trigger.CallCount);
+    }
+
+    [Fact]
     public async Task HeartbeatWorker_does_not_invoke_the_installer_when_no_install_is_requested()
     {
         var cts = new CancellationTokenSource();
@@ -571,6 +607,7 @@ public class WorkerTests
         IClientCertificateStore? certificateStore = null,
         SocketsHttpHandler? sharedHttpHandler = null,
         IUpdateChecker? updateChecker = null,
+        IUpdateCheckTrigger? updateCheckTrigger = null,
         FileCaTrustStore? caTrustStore = null,
         IAgentSelfUpdater? selfUpdater = null,
         SelfUpdateStagingCleaner? selfUpdateStagingCleaner = null) =>
@@ -579,6 +616,7 @@ public class WorkerTests
             caTrustStore ?? new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem")),
             sharedHttpHandler ?? new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } },
             updateChecker ?? new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false)),
+            updateCheckTrigger ?? new FakeUpdateCheckTrigger(),
             selfUpdater ?? new FakeAgentSelfUpdater(),
             // A fresh, never-created temp directory each time — CleanupOldFiles
             // is a safe no-op against a directory that doesn't exist, so
@@ -623,6 +661,18 @@ public class WorkerTests
         {
             InstallCallCount++;
             return onInstall is null ? Task.FromResult(CheckerInstallOutcome.Succeeded) : Task.FromResult(onInstall());
+        }
+    }
+
+    private class FakeUpdateCheckTrigger(Action? onCheckAndReportNow = null) : IUpdateCheckTrigger
+    {
+        public int CallCount { get; private set; }
+
+        public Task CheckAndReportNowAsync(CancellationToken ct = default)
+        {
+            CallCount++;
+            onCheckAndReportNow?.Invoke();
+            return Task.CompletedTask;
         }
     }
 

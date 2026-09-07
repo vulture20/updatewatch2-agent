@@ -243,7 +243,16 @@ builder.Services.AddHttpClient<IServerClient, ServerClient>((sp, client) =>
 .ConfigurePrimaryHttpMessageHandler(sp => sp.GetRequiredService<SocketsHttpHandler>());
 
 builder.Services.AddHostedService<RegistrationWorker>();
-builder.Services.AddHostedService<UpdateCheckWorker>();
+
+// Registered as a singleton first, then exposed both as the hosted
+// service and as IUpdateCheckTrigger via the same instance — HeartbeatWorker
+// needs to call into it directly (an immediate check/report right after a
+// successful remote-triggered install), and a plain AddHostedService<T>()
+// here would give the hosted service its own separate instance instead.
+builder.Services.AddSingleton<UpdateCheckWorker>();
+builder.Services.AddSingleton<IUpdateCheckTrigger>(sp => sp.GetRequiredService<UpdateCheckWorker>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<UpdateCheckWorker>());
+
 builder.Services.AddHostedService<HeartbeatWorker>();
 
 var host = builder.Build();

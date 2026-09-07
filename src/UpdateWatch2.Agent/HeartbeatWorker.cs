@@ -54,6 +54,7 @@ public class HeartbeatWorker(
     FileCaTrustStore caTrustStore,
     SocketsHttpHandler sharedHttpHandler,
     IUpdateChecker updateChecker,
+    IUpdateCheckTrigger updateCheckTrigger,
     IAgentSelfUpdater selfUpdater,
     SelfUpdateStagingCleaner selfUpdateStagingCleaner,
     ILogger<HeartbeatWorker> logger) : BackgroundService
@@ -229,6 +230,28 @@ public class HeartbeatWorker(
         {
             logger.LogError(ex, "Install failed");
             outcome = WireInstallOutcome.Failed;
+        }
+
+        if (outcome == WireInstallOutcome.Succeeded)
+        {
+            // Report the new update state right away — without this, the
+            // admin UI's pending-updates list stays stale until
+            // UpdateCheckWorker's own next jittered tick, up to
+            // UpdateCheckIntervalMinutes (plus jitter) later. Own try/catch:
+            // a failure here must not stop the ack below, and the next
+            // scheduled UpdateCheckWorker tick is still the fallback either way.
+            try
+            {
+                await updateCheckTrigger.CheckAndReportNowAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to refresh the update list immediately after a successful install — will pick it up on the next scheduled check.");
+            }
         }
 
         try
