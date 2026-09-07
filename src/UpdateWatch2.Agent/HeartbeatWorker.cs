@@ -33,13 +33,18 @@ namespace UpdateWatch2.Agent;
 /// signed under a CA root a rotation has since superseded
 /// (updatewatch2-server#6 follow-up — CA rotation never reissues an
 /// already-onboarded agent's leaf on its own, so this prompts an eager
-/// renewal instead of relying solely on the lead-time check above) —
-/// reusing this existing periodic cycle rather than a one-time startup
-/// check means a server upgrade, an approaching expiry, a mid-lifetime
-/// revocation, a fresh install request, a fresh agent release, or a CA
-/// rotation activating that happens while this agent keeps running all get
-/// detected too, not just a condition already present at this agent's own
-/// last startup.
+/// renewal instead of relying solely on the lead-time check above), and —
+/// purely local, no server involvement — deleting old downloaded
+/// self-update packages from the staging directory that are older than
+/// <see cref="AgentOptions.SelfUpdateStagingRetentionDays"/>, always
+/// keeping at least the most recent one (see
+/// <see cref="SelfUpdate.SelfUpdateStagingCleaner"/>) — reusing this
+/// existing periodic cycle rather than a one-time startup check means a
+/// server upgrade, an approaching expiry, a mid-lifetime revocation, a
+/// fresh install request, a fresh agent release, a CA rotation activating,
+/// or old update packages piling up that happens while this agent keeps
+/// running all get detected/handled too, not just a condition already
+/// present at this agent's own last startup.
 /// </summary>
 public class HeartbeatWorker(
     AgentOptions options,
@@ -50,6 +55,7 @@ public class HeartbeatWorker(
     SocketsHttpHandler sharedHttpHandler,
     IUpdateChecker updateChecker,
     IAgentSelfUpdater selfUpdater,
+    SelfUpdateStagingCleaner selfUpdateStagingCleaner,
     ILogger<HeartbeatWorker> logger) : BackgroundService
 {
     // A single 401/403 could in principle be some transient fluke this
@@ -136,6 +142,18 @@ public class HeartbeatWorker(
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Failed to refresh this agent's trusted CA root bundle");
+            }
+
+            // Also its own try/catch — purely local housekeeping with no
+            // server round-trip involved, so a failure here can't affect
+            // anything else this tick does; it just retries next tick.
+            try
+            {
+                selfUpdateStagingCleaner.CleanupOldFiles(TimeSpan.FromDays(options.SelfUpdateStagingRetentionDays));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to clean up old self-update packages");
             }
 
             await Task.Delay(TimeSpan.FromMinutes(options.AliveIntervalMinutes), stoppingToken);

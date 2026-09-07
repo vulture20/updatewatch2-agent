@@ -83,6 +83,43 @@ public class WorkerTests
     }
 
     [Fact]
+    public async Task HeartbeatWorker_cleans_up_old_self_update_packages_on_its_own_tick()
+    {
+        // Integration-style, not just SelfUpdateStagingCleanerTests in
+        // isolation — this confirms HeartbeatWorker actually wires the
+        // cleaner in and calls it, which a unit test of the cleaner class
+        // alone can't catch (e.g. Program.cs simply forgetting to register
+        // or invoke it).
+        var stagingDirectory = Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-selfupdate-wiring-{Guid.NewGuid()}");
+        Directory.CreateDirectory(stagingDirectory);
+        var oldFile = Path.Combine(stagingDirectory, "agent-0.1.0.deb");
+        File.WriteAllText(oldFile, "placeholder");
+        File.SetLastWriteTimeUtc(oldFile, DateTime.UtcNow.AddDays(-200));
+        var recentFile = Path.Combine(stagingDirectory, "agent-0.12.4.deb");
+        File.WriteAllText(recentFile, "placeholder");
+
+        try
+        {
+            var cts = new CancellationTokenSource();
+            var client = new FakeServerClient(onSendAlive: () => cts.Cancel());
+            var cleaner = new SelfUpdateStagingCleaner(stagingDirectory, NullLogger<SelfUpdateStagingCleaner>.Instance);
+
+            var worker = CreateHeartbeatWorker(
+                new AgentOptions { AliveIntervalMinutes = 60, SelfUpdateStagingRetentionDays = 90 },
+                client, ReadyCertificateState(), selfUpdateStagingCleaner: cleaner);
+
+            await RunUntilCancelledAsync(worker, cts.Token);
+
+            Assert.False(File.Exists(oldFile));
+            Assert.True(File.Exists(recentFile));
+        }
+        finally
+        {
+            Directory.Delete(stagingDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task HeartbeatWorker_makes_no_calls_until_the_certificate_state_is_ready()
     {
         var certificateState = new AgentCertificateState();
@@ -535,13 +572,21 @@ public class WorkerTests
         SocketsHttpHandler? sharedHttpHandler = null,
         IUpdateChecker? updateChecker = null,
         FileCaTrustStore? caTrustStore = null,
-        IAgentSelfUpdater? selfUpdater = null) =>
+        IAgentSelfUpdater? selfUpdater = null,
+        SelfUpdateStagingCleaner? selfUpdateStagingCleaner = null) =>
         new(options, client, certificateState,
             certificateStore ?? new FakeClientCertificateStore(existing: null),
             caTrustStore ?? new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem")),
             sharedHttpHandler ?? new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } },
             updateChecker ?? new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false)),
             selfUpdater ?? new FakeAgentSelfUpdater(),
+            // A fresh, never-created temp directory each time — CleanupOldFiles
+            // is a safe no-op against a directory that doesn't exist, so
+            // tests that don't care about this behavior don't need to pass
+            // anything.
+            selfUpdateStagingCleaner ?? new SelfUpdateStagingCleaner(
+                Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-selfupdate-staging-{Guid.NewGuid()}"),
+                NullLogger<SelfUpdateStagingCleaner>.Instance),
             logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     private static AgentCertificateState ReadyCertificateState()

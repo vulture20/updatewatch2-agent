@@ -36,6 +36,7 @@ public class LinuxFileConfigStoreTests : IDisposable
             RegistrationRetryIntervalSeconds = 15,
             RegistrationToken = "abc123",
             ClientCertificateThumbprint = "deadbeef",
+            SelfUpdateStagingRetentionDays = 30,
         };
 
         store.Save(original);
@@ -50,6 +51,7 @@ public class LinuxFileConfigStoreTests : IDisposable
         Assert.Equal(original.RegistrationRetryIntervalSeconds, loaded.RegistrationRetryIntervalSeconds);
         Assert.Equal(original.RegistrationToken, loaded.RegistrationToken);
         Assert.Equal(original.ClientCertificateThumbprint, loaded.ClientCertificateThumbprint);
+        Assert.Equal(original.SelfUpdateStagingRetentionDays, loaded.SelfUpdateStagingRetentionDays);
     }
 
     [Fact]

@@ -78,4 +78,19 @@ public class AgentOptions
     /// so a short value is representable for tests without a whole-minute floor.
     /// </summary>
     public int CertificateMaintenanceIntervalSeconds { get; set; } = 900;
+
+    /// <summary>
+    /// How long a downloaded self-update package (updatewatch2-agent#14)
+    /// is kept in the local staging directory before
+    /// <see cref="SelfUpdate.SelfUpdateStagingCleaner"/> deletes it —
+    /// <see cref="SelfUpdate.AgentSelfUpdateService"/> itself never cleans
+    /// up a package it actually applied (successfully or not), only one
+    /// that failed its integrity check, so every self-update this agent
+    /// has ever gone through would otherwise leave its downloaded
+    /// installer/.deb/.rpm behind indefinitely. The single
+    /// most-recently-downloaded package is always kept regardless of this
+    /// value, so an admin can always find at least one real example of
+    /// what this agent last tried to install.
+    /// </summary>
+    public int SelfUpdateStagingRetentionDays { get; set; } = 90;
 }

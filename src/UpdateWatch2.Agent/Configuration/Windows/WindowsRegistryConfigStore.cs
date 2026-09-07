@@ -43,6 +43,7 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
             ClientCertificateThumbprint = (string?)key.GetValue(nameof(AgentOptions.ClientCertificateThumbprint)),
             CertificateRenewalLeadTimeDays = ReadInt(key, nameof(AgentOptions.CertificateRenewalLeadTimeDays), 60),
             CertificateMaintenanceIntervalSeconds = ReadInt(key, nameof(AgentOptions.CertificateMaintenanceIntervalSeconds), 900),
+            SelfUpdateStagingRetentionDays = ReadInt(key, nameof(AgentOptions.SelfUpdateStagingRetentionDays), 90),
         };
     }
 
@@ -64,6 +65,7 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
         SetOrDeleteString(key, nameof(AgentOptions.ClientCertificateThumbprint), options.ClientCertificateThumbprint);
         key.SetValue(nameof(AgentOptions.CertificateRenewalLeadTimeDays), options.CertificateRenewalLeadTimeDays, RegistryValueKind.DWord);
         key.SetValue(nameof(AgentOptions.CertificateMaintenanceIntervalSeconds), options.CertificateMaintenanceIntervalSeconds, RegistryValueKind.DWord);
+        key.SetValue(nameof(AgentOptions.SelfUpdateStagingRetentionDays), options.SelfUpdateStagingRetentionDays, RegistryValueKind.DWord);
     }
 
     private static void SetOrDeleteString(RegistryKey key, string name, string? value)

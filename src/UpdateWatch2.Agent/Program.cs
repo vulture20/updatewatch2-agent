@@ -70,6 +70,15 @@ var selfUpdateStagingDirectory = OperatingSystem.IsWindows()
     ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "UpdateWatch2", "agent-update")
     : "/var/lib/updatewatch2/agent-update";
 
+// Platform-agnostic (unlike IPlatformUpdateApplier) — plain file-age
+// bookkeeping on the same staging directory above, registered
+// unconditionally so it also runs (as a no-op) on a Linux host with no
+// known package manager, where nothing is ever downloaded there in the
+// first place. See SelfUpdateStagingCleaner's own doc comment.
+builder.Services.AddSingleton(sp => new SelfUpdateStagingCleaner(
+    selfUpdateStagingDirectory,
+    sp.GetRequiredService<ILogger<SelfUpdateStagingCleaner>>()));
+
 if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<IWindowsUpdateSession, WuaUpdateSession>();
