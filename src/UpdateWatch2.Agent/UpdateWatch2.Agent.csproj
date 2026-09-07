@@ -11,6 +11,26 @@
          installer/nsis/icon.ico — see logos/ at the workspace root and
          CLAUDE.md for how to regenerate both. -->
     <ApplicationIcon>icon.ico</ApplicationIcon>
+    <!-- Without this, an unset <Version> defaults to 1.0.0.0/1.0.0
+         regardless of AgentVersion.Current, so the compiled binary's own
+         Windows file-version resource (Explorer's Details tab: File
+         version/Product version) never matched the actual agent version —
+         confirmed on a real installed agent, where the only way to tell
+         two builds apart on disk was the file's timestamp. Read from the
+         repo-root VERSION file (the same source release.yml already reads
+         for the NSIS installer's own -DVERSION= and the fpm package
+         version) rather than duplicating the literal here, so there's
+         still exactly one place to bump — AgentVersion.cs's own doc
+         comment already asks for that discipline for the *runtime-reported*
+         version; this now covers the *compiled-binary metadata* the same
+         way, from the same file, without the two ever needing to be
+         reconciled by hand.
+         IncludeSourceRevisionInInformationalVersion=false keeps
+         "Product version" as a clean SemVer string (no "+<git-sha>"
+         suffix) even if a future SourceLink-style package ever turns that
+         behavior on by default. -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../../VERSION').Trim())</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
