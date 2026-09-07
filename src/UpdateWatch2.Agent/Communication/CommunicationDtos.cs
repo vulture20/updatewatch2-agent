@@ -92,14 +92,17 @@ public record AgentUpdateOffer(
 /// <summary>
 /// Result of an alive heartbeat, now also carrying whether the server has a
 /// remote install pending for this agent (updatewatch2-server#10/
-/// updatewatch2-agent#4) and whether a newer agent version is available
-/// (updatewatch2-server#14/updatewatch2-agent#14), alongside the existing
-/// certificate-rejection signal. <see cref="InstallRequested"/> and
-/// <see cref="AgentUpdateAvailable"/> are only ever meaningful when
-/// <see cref="Outcome"/> is <see cref="AliveOutcome.Success"/> — a rejected
-/// or otherwise-failed call has no trustworthy body to read them from.
+/// updatewatch2-agent#4), whether a newer agent version is available
+/// (updatewatch2-server#14/updatewatch2-agent#14), and whether this agent's
+/// own client certificate was issued under a CA root a rotation has since
+/// superseded (updatewatch2-server#6 follow-up), alongside the existing
+/// certificate-rejection signal. <see cref="InstallRequested"/>,
+/// <see cref="AgentUpdateAvailable"/>, and <see cref="CertificateRotationPending"/>
+/// are only ever meaningful when <see cref="Outcome"/> is
+/// <see cref="AliveOutcome.Success"/> — a rejected or otherwise-failed call
+/// has no trustworthy body to read them from.
 /// </summary>
-public record AliveResult(AliveOutcome Outcome, bool InstallRequested, AgentUpdateOffer? AgentUpdateAvailable = null)
+public record AliveResult(AliveOutcome Outcome, bool InstallRequested, AgentUpdateOffer? AgentUpdateAvailable = null, bool CertificateRotationPending = false)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }

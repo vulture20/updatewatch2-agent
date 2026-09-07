@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
@@ -27,12 +28,18 @@ namespace UpdateWatch2.Agent;
 /// definition, unlike routine update detection), and whether the server has
 /// offered a newer agent release to self-update to
 /// (updatewatch2-server#14/updatewatch2-agent#14, same reasoning: also
-/// time-sensitive and also driven off this same alive response) — reusing
-/// this existing periodic cycle rather than a one-time startup check means
-/// a server upgrade, an approaching expiry, a mid-lifetime revocation, a
-/// fresh install request, or a fresh agent release that happens while this
-/// agent keeps running all get detected too, not just a condition already
-/// present at this agent's own last startup.
+/// time-sensitive and also driven off this same alive response), and
+/// whether the server reports this agent's own client certificate was
+/// signed under a CA root a rotation has since superseded
+/// (updatewatch2-server#6 follow-up — CA rotation never reissues an
+/// already-onboarded agent's leaf on its own, so this prompts an eager
+/// renewal instead of relying solely on the lead-time check above) —
+/// reusing this existing periodic cycle rather than a one-time startup
+/// check means a server upgrade, an approaching expiry, a mid-lifetime
+/// revocation, a fresh install request, a fresh agent release, or a CA
+/// rotation activating that happens while this agent keeps running all get
+/// detected too, not just a condition already present at this agent's own
+/// last startup.
 /// </summary>
 public class HeartbeatWorker(
     AgentOptions options,
@@ -136,6 +143,11 @@ public class HeartbeatWorker(
                 if (result.AgentUpdateAvailable is not null)
                 {
                     await HandleSelfUpdateAsync(result.AgentUpdateAvailable, ct);
+                }
+
+                if (result.CertificateRotationPending)
+                {
+                    await HandleCertificateRotationRenewalAsync(ct);
                 }
             }
 
@@ -291,6 +303,44 @@ public class HeartbeatWorker(
             return;
         }
 
+        await RenewClientCertificateAsync(current, ct);
+    }
+
+    /// <summary>
+    /// Invoked inline on the heartbeat's own tick, same as
+    /// <see cref="HandleInstallRequestAsync"/>/<see cref="HandleSelfUpdateAsync"/>
+    /// — a CA root rotation activating (updatewatch2-server#6) is just as
+    /// time-sensitive as those, since this agent's leaf keeps chaining to a
+    /// root that could be retired at any point. Reuses the exact same
+    /// renew-and-hot-swap logic <see cref="CheckCertificateRenewalAsync"/>
+    /// already has for its own expiry-lead-time trigger, just without
+    /// waiting for that window — see <see cref="RenewClientCertificateAsync"/>.
+    /// No acknowledgement call back to the server: this is self-correcting,
+    /// same reasoning as <see cref="HandleSelfUpdateAsync"/> — once renewed,
+    /// this agent's next heartbeat naturally reports
+    /// <c>certificateRotationPending = false</c> on its own, since the
+    /// server computes it fresh every time from the stored issuing root.
+    /// </summary>
+    private async Task HandleCertificateRotationRenewalAsync(CancellationToken ct)
+    {
+        var current = certificateStore.Load();
+        if (current is null)
+        {
+            // Shouldn't normally happen — this heartbeat only reached this
+            // agent's server-side record at all because it authenticated
+            // with a certificate a moment ago — but RegistrationWorker
+            // owns recovering a genuinely missing certificate either way.
+            return;
+        }
+
+        logger.LogInformation(
+            "Server reports this agent's client certificate was issued under a CA root that's no longer current " +
+            "— renewing immediately instead of waiting for the normal expiry-based schedule.");
+        await RenewClientCertificateAsync(current, ct);
+    }
+
+    private async Task RenewClientCertificateAsync(X509Certificate2 current, CancellationToken ct)
+    {
         var result = await serverClient.RenewCertificateAsync(ct);
         if (!result.Success || result.Certificate is null)
         {

@@ -116,6 +116,40 @@ public class ServerClientTests
     }
 
     [Fact]
+    public async Task SendAliveAsync_parses_certificate_rotation_pending_when_the_server_reports_it()
+    {
+        // updatewatch2-server#6 follow-up: additive field, same shape as
+        // installRequested/agentUpdateAvailable.
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false, certificateRotationPending = true }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.True(result.CertificateRotationPending);
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_defaults_certificate_rotation_pending_to_false_when_the_server_omits_it()
+    {
+        // Backward compat with a pre-0.8.0 server that doesn't send this
+        // field at all.
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.False(result.CertificateRotationPending);
+    }
+
+    [Fact]
     public async Task DownloadFileAsync_writes_the_response_body_to_the_destination_path()
     {
         var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

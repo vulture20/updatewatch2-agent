@@ -53,7 +53,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
-            return new AliveResult(AliveOutcome.Success, body?.InstallRequested ?? false, body?.AgentUpdateAvailable);
+            return new AliveResult(AliveOutcome.Success, body?.InstallRequested ?? false, body?.AgentUpdateAvailable, body?.CertificateRotationPending ?? false);
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -68,7 +68,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         return AliveResult.From(AliveOutcome.OtherFailure);
     }
 
-    private record AliveResponseBody(bool InstallRequested, AgentUpdateOffer? AgentUpdateAvailable);
+    private record AliveResponseBody(bool InstallRequested, AgentUpdateOffer? AgentUpdateAvailable, bool CertificateRotationPending);
 
     public async Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
     {

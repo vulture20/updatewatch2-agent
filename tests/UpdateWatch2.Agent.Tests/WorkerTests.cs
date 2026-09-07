@@ -427,6 +427,56 @@ public class WorkerTests
         Assert.True(aliveCount >= 2);
     }
 
+    [Fact]
+    public async Task HeartbeatWorker_renews_immediately_when_the_server_reports_certificate_rotation_pending_even_far_from_expiry()
+    {
+        // updatewatch2-server#6 follow-up: CA root rotation never reissues
+        // an already-onboarded agent's own leaf on its own — this is the
+        // agent-side reaction to the server's certificateRotationPending
+        // signal, which must fire regardless of how far this certificate
+        // still is from its own expiry-driven renewal window.
+        var cts = new CancellationTokenSource();
+        var farFromExpiry = CreateThrowawayCertificate("far-from-expiry-but-rotated", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var newCertificate = CreateThrowawayCertificate("renewed-under-new-root", DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(730));
+        var newPfxBase64 = Convert.ToBase64String(newCertificate.Export(X509ContentType.Pfx));
+        var certificateStore = new FakeClientCertificateStore(existing: farFromExpiry);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [farFromExpiry] } };
+
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onCertificateRotationPending: _ => true,
+            onRenewCertificate: () => new RenewCertificateResult(true, newPfxBase64));
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60 },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(1, client.RenewCertificateCallCount);
+        var remaining = Assert.Single(handler.SslOptions.ClientCertificates!.Cast<X509Certificate2>());
+        Assert.Equal(newCertificate.GetCertHashString(HashAlgorithmName.SHA256), remaining.GetCertHashString(HashAlgorithmName.SHA256));
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_renew_when_certificate_rotation_is_not_pending_and_expiry_is_far_away()
+    {
+        var cts = new CancellationTokenSource();
+        var farFromExpiry = CreateThrowawayCertificate("plenty-of-time-no-rotation", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var certificateStore = new FakeClientCertificateStore(existing: farFromExpiry);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [farFromExpiry] } };
+
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onCertificateRotationPending: _ => false);
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60 },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, client.RenewCertificateCallCount);
+    }
+
     private static HeartbeatWorker CreateHeartbeatWorker(
         AgentOptions options,
         IServerClient client,
@@ -493,7 +543,8 @@ public class WorkerTests
         Action<WireInstallOutcome>? onAcknowledgeInstall = null,
         Func<byte[]>? onFetchCaCertificateBundle = null,
         Func<int, AgentUpdateOffer?>? onAgentUpdateAvailable = null,
-        Func<string, string, Task>? onDownloadFile = null) : IServerClient
+        Func<string, string, Task>? onDownloadFile = null,
+        Func<int, bool>? onCertificateRotationPending = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
@@ -518,7 +569,8 @@ public class WorkerTests
             var outcome = onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success;
             var installRequested = outcome == AliveOutcome.Success && (onInstallRequested?.Invoke(SendAliveCallCount) ?? false);
             var agentUpdateAvailable = outcome == AliveOutcome.Success ? onAgentUpdateAvailable?.Invoke(SendAliveCallCount) : null;
-            return Task.FromResult(new AliveResult(outcome, installRequested, agentUpdateAvailable));
+            var certificateRotationPending = outcome == AliveOutcome.Success && (onCertificateRotationPending?.Invoke(SendAliveCallCount) ?? false);
+            return Task.FromResult(new AliveResult(outcome, installRequested, agentUpdateAvailable, certificateRotationPending));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
