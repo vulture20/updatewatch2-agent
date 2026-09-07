@@ -104,8 +104,29 @@ public class RegistrationWorker(
                     await EnsureCaPinnedAsync(bootstrapClient, stoppingToken);
                     await TryRegisterOnceAsync(bootstrapClient, stoppingToken);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
+                    // A genuine shutdown — propagate to the outer handler
+                    // below rather than swallowing it here.
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Deliberately catches every other exception, including
+                    // an OperationCanceledException NOT caused by
+                    // stoppingToken (e.g. HttpClient's own 100s request
+                    // timeout surfaces as a TaskCanceledException, which IS
+                    // an OperationCanceledException but has nothing to do
+                    // with this worker shutting down). Confirmed live to
+                    // matter, not just in theory: an earlier version of this
+                    // catch excluded OperationCanceledException unconditionally,
+                    // which let a network timeout during registration fall
+                    // through to the outer `catch (OperationCanceledException)`
+                    // below — silently ending this loop for the rest of the
+                    // process's life, with zero log output, while the agent
+                    // kept running and looking healthy. A deleted-then-
+                    // recreated agent whose host has any transient network
+                    // trouble reaching the server never got to retry again.
                     logger.LogError(ex, "Registration attempt failed");
                 }
 

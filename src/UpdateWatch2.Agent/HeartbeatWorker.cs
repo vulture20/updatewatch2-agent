@@ -79,7 +79,11 @@ public class HeartbeatWorker(
             {
                 await HandleAliveAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to send alive heartbeat");
             }
@@ -91,7 +95,11 @@ public class HeartbeatWorker(
             {
                 await CheckProtocolVersionAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 logger.LogWarning(ex, "Failed to check the server's protocol version");
             }
@@ -104,7 +112,11 @@ public class HeartbeatWorker(
             {
                 await CheckCertificateRenewalAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 logger.LogWarning(ex, "Failed to check/renew this agent's client certificate");
             }
@@ -117,7 +129,11 @@ public class HeartbeatWorker(
             {
                 await CheckCaTrustRefreshAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 logger.LogWarning(ex, "Failed to refresh this agent's trusted CA root bundle");
             }
@@ -187,7 +203,11 @@ public class HeartbeatWorker(
             var checkerOutcome = await updateChecker.InstallAsync(ct);
             outcome = checkerOutcome == CheckerInstallOutcome.Succeeded ? WireInstallOutcome.Succeeded : WireInstallOutcome.Failed;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             logger.LogError(ex, "Install failed");
             outcome = WireInstallOutcome.Failed;
@@ -197,7 +217,11 @@ public class HeartbeatWorker(
         {
             await serverClient.AcknowledgeInstallAsync(outcome, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             // Self-resolving: the server keeps reporting this install as
             // pending until an acknowledgement actually lands, so the next
@@ -239,7 +263,11 @@ public class HeartbeatWorker(
                     break;
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             logger.LogError(ex, "Self-update failed unexpectedly.");
         }

@@ -21,27 +21,40 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(options => options.ServiceName = "UpdateWatch2 Agent");
 builder.Services.AddSystemd();
 
-builder.Services.AddSingleton<IAgentConfigStore>(_ =>
-{
-    if (OperatingSystem.IsWindows())
-    {
-        return new WindowsRegistryConfigStore();
-    }
-
-    if (OperatingSystem.IsLinux())
-    {
-        return new LinuxFileConfigStore();
-    }
-
-    throw new PlatformNotSupportedException("UpdateWatch2 Agent only supports Windows and Linux.");
-});
+// Constructed directly (not just registered lazily via DI) because its
+// Load() result is needed right here, before builder.Build(), to resolve
+// the actual configured log level below.
+IAgentConfigStore configStore = OperatingSystem.IsWindows()
+    ? new WindowsRegistryConfigStore()
+    : OperatingSystem.IsLinux()
+        ? new LinuxFileConfigStore()
+        : throw new PlatformNotSupportedException("UpdateWatch2 Agent only supports Windows and Linux.");
+builder.Services.AddSingleton(configStore);
 
 // Loaded once at startup. A server-pushed log-level change (CLAUDE.md
 // section 6.2) would need this to become reloadable — not implemented yet.
-builder.Services.AddSingleton(sp => sp.GetRequiredService<IAgentConfigStore>().Load());
+var agentOptions = configStore.Load();
+builder.Services.AddSingleton(agentOptions);
 
-var logLevelFromConfig = builder.Configuration["UpdateWatch2:LogLevel"]; // overridable for local runs/tests
-if (Enum.TryParse<LogLevel>(MapLogLevel(logLevelFromConfig ?? "INFO"), out var minLevel))
+// This used to read builder.Configuration["UpdateWatch2:LogLevel"] — a
+// configuration key nothing in this codebase ever sets, so it always fell
+// through to the "INFO" fallback below regardless of what agent.conf/the
+// registry's own LogLevel value actually said. Fixed to read the value
+// this agent is actually configured with. Confirmed by hand while
+// diagnosing a real incident (a silently-dead RegistrationWorker producing
+// zero log output): had LogLevel been genuinely wired up already, bumping
+// it to DEBUG would at least have shown *something* happening, instead of
+// looking identical to "nothing is running".
+//
+// Also — matching the server's own documented finding (CLAUDE.md) that
+// builder.Logging.SetMinimumLevel(...) alone does not reliably take effect
+// on a Generic-Host-style app, because Logging:LogLevel:* read reactively
+// from IConfiguration wins over it — writing the value directly into
+// configuration is what the console/EventLog providers' filter actually
+// respects.
+var mappedLogLevel = MapLogLevel(agentOptions.LogLevel);
+builder.Configuration["Logging:LogLevel:Default"] = mappedLogLevel;
+if (Enum.TryParse<LogLevel>(mappedLogLevel, out var minLevel))
 {
     builder.Logging.SetMinimumLevel(minLevel);
 }

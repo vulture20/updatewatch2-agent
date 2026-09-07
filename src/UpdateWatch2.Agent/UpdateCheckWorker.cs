@@ -40,7 +40,11 @@ public class UpdateCheckWorker(
                     "Update check reported {Count} update(s), reboot required: {RebootRequired}",
                     result.Updates.Count, result.RebootRequired);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 logger.LogError(ex, "Update check failed");
             }

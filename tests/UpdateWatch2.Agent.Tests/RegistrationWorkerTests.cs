@@ -138,6 +138,61 @@ public class RegistrationWorkerTests : IDisposable
         Assert.Equal(recoveredCertificate.GetCertHashString(HashAlgorithmName.SHA256), reattached.GetCertHashString(HashAlgorithmName.SHA256));
     }
 
+    [Fact]
+    public async Task A_registration_attempt_that_times_out_is_logged_and_retried_instead_of_silently_ending_the_worker()
+    {
+        // Regression test for a real, live-diagnosed bug: HttpClient's own
+        // request timeout surfaces as a TaskCanceledException — an
+        // OperationCanceledException that has nothing to do with this
+        // worker's own stoppingToken (that one is never cancelled here).
+        // The old code caught it via a catch clause that excluded
+        // OperationCanceledException unconditionally, letting it fall
+        // through into an outer handler that silently ended the loop for
+        // the rest of the process's life, with zero log output and no
+        // further retries — exactly indistinguishable from "the agent is
+        // just idling" from the outside.
+        var configStore = new FakeAgentConfigStore();
+        var options = new AgentOptions { RegistrationRetryIntervalSeconds = 1 };
+
+        var callCount = 0;
+        var serverClient = new FakeServerClient(
+            caBytes: CreateThrowawayCertificate("Test CA").Export(X509ContentType.Cert),
+            onRegister: _ =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    // A CancellationTokenSource entirely unrelated to the
+                    // worker's own stoppingToken — simulates HttpClient's
+                    // internal request-timeout mechanism.
+                    using var unrelatedTimeout = new CancellationTokenSource();
+                    unrelatedTimeout.Cancel();
+                    unrelatedTimeout.Token.ThrowIfCancellationRequested();
+                }
+
+                return new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: "0.1.0");
+            });
+        var certificateStore = new FakeClientCertificateStore(existing: null);
+        var certificateState = new AgentCertificateState();
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } };
+
+        var worker = new RegistrationWorker(
+            options, configStore, new FileCaTrustStore(_caPath), certificateStore,
+            handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitUntilAsync(() => callCount >= 2, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+
+        Assert.True(callCount >= 2, "The worker should retry after a non-shutdown OperationCanceledException, not silently end the loop.");
+    }
+
     private static CancellationToken TimeoutToken(TimeSpan? timeout = null) =>
         new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(5)).Token;
 

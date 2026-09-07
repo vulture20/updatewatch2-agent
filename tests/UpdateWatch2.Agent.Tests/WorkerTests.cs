@@ -99,6 +99,39 @@ public class WorkerTests
     }
 
     [Fact]
+    public async Task HeartbeatWorker_retries_after_a_non_shutdown_operation_canceled_exception_instead_of_ending_the_worker()
+    {
+        // Regression test for the same class of bug fixed in
+        // RegistrationWorker (see RegistrationWorkerTests): an
+        // OperationCanceledException unrelated to this worker's own
+        // stoppingToken — e.g. HttpClient's own request-timeout mechanism,
+        // which uses its own internal CancellationTokenSource — must be
+        // logged and retried on the next tick, not mistaken for a genuine
+        // shutdown and left to silently end the worker for the rest of the
+        // process's life.
+        var cts = new CancellationTokenSource();
+        var callCount = 0;
+        var client = new FakeServerClient(onSendAlive: () =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                using var unrelatedTimeout = new CancellationTokenSource();
+                unrelatedTimeout.Cancel();
+                unrelatedTimeout.Token.ThrowIfCancellationRequested();
+            }
+
+            cts.Cancel(); // stop the worker's loop once it reaches the second, successful attempt
+        });
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 0 }, client, ReadyCertificateState());
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(2, callCount);
+    }
+
+    [Fact]
     public async Task HeartbeatWorker_warns_when_the_servers_protocol_version_differs()
     {
         var cts = new CancellationTokenSource();
