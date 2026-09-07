@@ -10,6 +10,19 @@ Wants=network-online.target
 # codebase never resolves ISystemdNotifier to send READY=1, so Type=notify
 # would just sit waiting for a signal that never comes and time out.
 Type=simple
+# Without this, cwd defaults to systemd's fallback of / (no WorkingDirectory
+# means the manager's own default, which is /), and the .NET Generic Host
+# derives ContentRootPath from the current directory — its config-reload
+# file watcher then recurses through the ENTIRE tree under that root.
+# Confirmed live to actually bite, not just in theory (hpn54l, agent
+# v0.12.1): with cwd=/, this sat for minutes recursively inotify-watching an
+# unrelated NFS-mounted backup share reachable from /, registering 170,000+
+# watches and climbing, before RegistrationWorker (or anything else) ever
+# ran a single loop iteration or produced a single log line — indistinguishable
+# from the agent being simply hung, with zero diagnostic output. Pinning
+# WorkingDirectory to the install directory keeps that walk scoped to the
+# handful of files actually in it.
+WorkingDirectory=/opt/updatewatch2-agent
 ExecStart=/opt/updatewatch2-agent/UpdateWatch2.Agent
 Restart=on-failure
 RestartSec=10s
