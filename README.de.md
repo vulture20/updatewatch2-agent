@@ -56,7 +56,7 @@ Jedes getaggte Release ([`release.yml`](.github/workflows/release.yml), ausgelö
 UpdateWatch2Agent-Setup-0.12.0-x64.exe
 
 # Unbeaufsichtigte Installation (z. B. über ein Deployment-Tool)
-UpdateWatch2Agent-Setup-0.12.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8443
+UpdateWatch2Agent-Setup-0.12.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8796
 ```
 
 Dies installiert und startet den Windows-Dienst `UpdateWatch2 Agent` und schreibt Serveradresse/-port nach `HKLM\SOFTWARE\UpdateWatch2\Agent` (per ACL auf Administrators/SYSTEM beschränkt). Ein erneuter Lauf des Installers über eine bestehende Installation führt ein Upgrade an Ort und Stelle durch. Der Deinstaller entfernt Dienst, Installationsverzeichnis, Registry-Schlüssel und (nach bestem Bemühen) das eigene Client-Zertifikat des Agents aus dem Computer-Zertifikatsspeicher.
@@ -74,7 +74,7 @@ sudo rpm -U updatewatch2-agent-<Version>-1.x86_64.rpm
 Dies installiert nach `/opt/updatewatch2-agent/`, legt eine Start-Konfiguration `/etc/updatewatch2/agent.conf` an, falls noch keine existiert, und liefert eine systemd-Unit (`updatewatch2-agent.service`) mit — **aktiviert, aber nicht gestartet**, bis eine Serveradresse gesetzt ist:
 
 ```bash
-sudo nano /etc/updatewatch2/agent.conf   # "ServerAddress" setzen (und "ServerPort", falls nicht 8443)
+sudo nano /etc/updatewatch2/agent.conf   # "ServerAddress" setzen (und "ServerPort", falls nicht 8796)
 sudo systemctl start updatewatch2-agent
 ```
 
@@ -85,7 +85,7 @@ Ein Upgrade über einen bereits konfigurierten, bereits laufenden Agent startet 
 | Einstellung | Windows (Registry, `HKLM\SOFTWARE\UpdateWatch2\Agent`) | Linux (`/etc/updatewatch2/agent.conf`, JSON) | Standard | Bedeutung |
 |---|---|---|---|---|
 | Serveradresse | `ServerAddress` | `ServerAddress` | — (erforderlich) | Hostname/IP des UpdateWatch2-Servers — **muss exakt** dessen eigener `UPDATEWATCH2_SERVER_HOSTNAME` entsprechen; dieser Agent prüft das SAN des Server-Zertifikats dagegen. |
-| Server-Port | `ServerPort` | `ServerPort` | `8443` | Der agent-seitige, gegenseitig TLS-authentifizierte Port des Servers. |
+| Server-Port | `ServerPort` | `ServerPort` | `8796` | Der agent-seitige, gegenseitig TLS-authentifizierte Port des Servers. |
 | Update-Prüfintervall | `UpdateCheckIntervalMinutes` | `UpdateCheckIntervalMinutes` | `240` | Basisintervall zwischen Update-Prüfungen, in Minuten. |
 | Update-Prüf-Jitter | `UpdateCheckJitterSeconds` | `UpdateCheckJitterSeconds` | `300` | Zufälliger Zuschlag (0..N Sekunden), damit nicht viele Agents gleichzeitig auf den Server treffen. |
 | Heartbeat-Intervall | `AliveIntervalMinutes` | `AliveIntervalMinutes` | `5` | Wie oft dieser Agent eine Alive-Meldung sendet. |

@@ -20,7 +20,7 @@ if [ ! -e "$CONFIG_FILE" ]; then
     cat > "$CONFIG_FILE" <<'EOF'
 {
   "ServerAddress": "",
-  "ServerPort": 8443,
+  "ServerPort": 8796,
   "UpdateCheckIntervalMinutes": 240,
   "UpdateCheckJitterSeconds": 300,
   "AliveIntervalMinutes": 5,
@@ -62,7 +62,7 @@ if command -v systemctl >/dev/null 2>&1; then
     else
         cat <<'EOF'
 UpdateWatch2 Agent installed but not started: it has no server to talk to
-yet. Set "ServerAddress" (and "ServerPort" if not 8443) in
+yet. Set "ServerAddress" (and "ServerPort" if not 8796) in
 /etc/updatewatch2/agent.conf, then:
 
     systemctl start updatewatch2-agent

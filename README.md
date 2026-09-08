@@ -56,7 +56,7 @@ Download `UpdateWatch2Agent-Setup-<version>-x64.exe` and run it:
 UpdateWatch2Agent-Setup-0.12.0-x64.exe
 
 # Unattended install (e.g. via a deployment tool)
-UpdateWatch2Agent-Setup-0.12.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8443
+UpdateWatch2Agent-Setup-0.12.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8796
 ```
 
 This installs and starts the `UpdateWatch2 Agent` Windows service, and writes the server address/port to `HKLM\SOFTWARE\UpdateWatch2\Agent` (ACL-restricted to Administrators/SYSTEM). Re-running the installer on top of an existing install performs an upgrade in place. The uninstaller removes the service, install directory, registry key, and (best-effort) this agent's own client certificate from the machine store.
@@ -74,7 +74,7 @@ sudo rpm -U updatewatch2-agent-<version>-1.x86_64.rpm
 This installs to `/opt/updatewatch2-agent/`, seeds a starter `/etc/updatewatch2/agent.conf` if one doesn't already exist, and ships a systemd unit (`updatewatch2-agent.service`) — **enabled but not started** until you set a server address:
 
 ```bash
-sudo nano /etc/updatewatch2/agent.conf   # set "ServerAddress" (and "ServerPort" if not 8443)
+sudo nano /etc/updatewatch2/agent.conf   # set "ServerAddress" (and "ServerPort" if not 8796)
 sudo systemctl start updatewatch2-agent
 ```
 
@@ -85,7 +85,7 @@ An upgrade over an already-configured, already-running agent restarts the servic
 | Setting | Windows (registry, `HKLM\SOFTWARE\UpdateWatch2\Agent`) | Linux (`/etc/updatewatch2/agent.conf`, JSON) | Default | What it does |
 |---|---|---|---|---|
 | Server address | `ServerAddress` | `ServerAddress` | — (required) | Hostname/IP of the UpdateWatch2 server — **must match** its own `UPDATEWATCH2_SERVER_HOSTNAME` exactly; this agent validates the server's certificate SAN against it. |
-| Server port | `ServerPort` | `ServerPort` | `8443` | The server's agent-facing mutual-TLS port. |
+| Server port | `ServerPort` | `ServerPort` | `8796` | The server's agent-facing mutual-TLS port. |
 | Update-check interval | `UpdateCheckIntervalMinutes` | `UpdateCheckIntervalMinutes` | `240` | Base interval between OS-update checks, in minutes. |
 | Update-check jitter | `UpdateCheckJitterSeconds` | `UpdateCheckJitterSeconds` | `300` | Random jitter (0..N seconds) added on top, so many agents don't hit the server at once. |
 | Heartbeat interval | `AliveIntervalMinutes` | `AliveIntervalMinutes` | `5` | How often this agent sends an alive message. |

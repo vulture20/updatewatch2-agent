@@ -12,7 +12,7 @@ public class AgentOptions
 {
     public string ServerAddress { get; set; } = "";
 
-    public int ServerPort { get; set; } = 8443;
+    public int ServerPort { get; set; } = 8796;
 
     /// <summary>Base interval between update checks.</summary>
     public int UpdateCheckIntervalMinutes { get; set; } = 240;

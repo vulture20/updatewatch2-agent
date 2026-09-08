@@ -33,7 +33,7 @@ public class WindowsRegistryConfigStore : IAgentConfigStore
         return new AgentOptions
         {
             ServerAddress = (string?)key.GetValue(nameof(AgentOptions.ServerAddress)) ?? "",
-            ServerPort = ReadInt(key, nameof(AgentOptions.ServerPort), 8443),
+            ServerPort = ReadInt(key, nameof(AgentOptions.ServerPort), 8796),
             UpdateCheckIntervalMinutes = ReadInt(key, nameof(AgentOptions.UpdateCheckIntervalMinutes), 240),
             UpdateCheckJitterSeconds = ReadInt(key, nameof(AgentOptions.UpdateCheckJitterSeconds), 300),
             AliveIntervalMinutes = ReadInt(key, nameof(AgentOptions.AliveIntervalMinutes), 5),

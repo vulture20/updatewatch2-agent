@@ -93,13 +93,13 @@ Page custom ServerConfigPageCreate ServerConfigPageLeave
 ; existing registry values (so re-running the installer to upgrade an
 ; already-configured agent doesn't blank its config), then /SERVERADDRESS=
 ; and /SERVERPORT= command-line overrides (for unattended /S rollouts),
-; then a hardcoded default port of 8443 (AgentOptions.ServerPort's own
+; then a hardcoded default port of 8796 (AgentOptions.ServerPort's own
 ; default) if nothing else supplied one.
 ; ---------------------------------------------------------------------
 Function .onInit
   SetRegView 64
 
-  StrCpy $ServerPort "8443"
+  StrCpy $ServerPort "8796"
   ReadRegStr $0 HKLM "${CONFIG_KEY}" "ServerAddress"
   ${IfNot} ${Errors}
     StrCpy $ServerAddress $0
@@ -137,7 +137,7 @@ Function ServerConfigPageCreate
   ${NSD_CreateText} 0 14u 100% 12u "$ServerAddress"
   Pop $ServerAddressField
 
-  ${NSD_CreateLabel} 0 34u 100% 12u "Server agent port (UPDATEWATCH2 mTLS port, default 8443):"
+  ${NSD_CreateLabel} 0 34u 100% 12u "Server agent port (UPDATEWATCH2 mTLS port, default 8796):"
   Pop $0
   ${NSD_CreateText} 0 48u 60u 12u "$ServerPort"
   Pop $ServerPortField
