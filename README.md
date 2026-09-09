@@ -94,6 +94,8 @@ An upgrade over an already-configured, already-running agent restarts the servic
 
 `RegistrationToken` and `ClientCertificateThumbprint` are also stored here but are managed automatically by the agent itself — never set these by hand except when placing a fresh token an admin gave you for re-issuance (see the server's admin UI). No service restart is required after changing any of these; the agent picks config changes up on its own maintenance/heartbeat cadence.
 
+> **Placing a re-issuance token:** just write the fresh `RegistrationToken` — that's the only field you need to touch. As of agent v0.14.3, `RegistrationWorker` detects on its own that the config-store token differs from the one it already consumed, and automatically drops the still-locally-present old certificate (and clears `ClientCertificateThumbprint` for you) before registering with the new one — this covers the "re-issue for an agent that's still running fine" case (suspected compromise, not loss), not just a genuinely lost/wiped certificate. On an older agent build, you must clear `ClientCertificateThumbprint` (Windows registry) yourself, or delete `/etc/updatewatch2/agent.pfx` (Linux) — leaving the old value in place there means the fresh token silently sits unused: `RegistrationWorker` keeps finding the old certificate still present and never re-registers, and recovery only happens once the server rejects that old certificate enough times for `HeartbeatWorker`'s self-heal to notice and drop it.
+
 ## 🧱 Tech stack
 
 - .NET 10 Generic Host Worker Service, targeting Windows and Linux from one codebase — platform-specific pieces (registry vs. config file, WUApiLib vs. `apt`/`dnf`, the two client-certificate stores) are selected at startup, not via separate build configurations.

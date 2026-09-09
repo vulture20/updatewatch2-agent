@@ -10,6 +10,31 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.14.3] - 2026-09-09
+
+### Fixed
+
+- A fresh admin-issued re-issuance `RegistrationToken`, placed while this
+  agent was still running fine on its old certificate (suspected
+  compromise, not loss), used to sit unused indefinitely unless an admin
+  also separately cleared `ClientCertificateThumbprint`/deleted the local
+  certificate by hand — undocumented, and easy to miss, since
+  `RegistrationWorker`'s certificate-present branch never looked at
+  `RegistrationToken` at all. Recovery only happened once the server
+  rejected the still-presented old certificate enough times for
+  `HeartbeatWorker`'s self-heal (`updatewatch2-server#11`/
+  `updatewatch2-agent#5`) to notice and drop it. `RegistrationWorker` now
+  detects a config-store token that differs from the one it already
+  consumed even while a certificate is still present locally, and
+  proactively drops that old certificate (and clears the attached
+  `SslOptions.ClientCertificates`) before registering with the new token
+  — the same drop-and-recover move self-heal already performs after a
+  rejection, just triggered directly by the token itself instead of
+  waiting on a rejection. No config/registry field beyond
+  `RegistrationToken` needs to be touched by hand anymore for this case;
+  README/README.de now call out the difference for anyone still on an
+  older build.
+
 ## [0.14.2] - 2026-09-09
 
 ### Fixed

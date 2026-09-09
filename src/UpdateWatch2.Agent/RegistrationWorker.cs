@@ -16,12 +16,21 @@ namespace UpdateWatch2.Agent;
 /// (updatewatch2-server#8/updatewatch2-agent#3):
 ///
 /// - Each iteration starts by checking <see cref="IClientCertificateStore.Load"/>.
-/// - If a certificate is present: attach it (idempotent — a no-op once
-///   already attached and <see cref="IAgentCertificateState.IsReady"/>) and
-///   idle for <see cref="AgentOptions.CertificateMaintenanceIntervalSeconds"/>
+/// - If a certificate is present: first check whether a registration token
+///   different from the one this agent already consumed has shown up in
+///   the config store anyway — an admin re-issuing a certificate for an
+///   agent that's still healthy locally (suspected compromise, not loss)
+///   is legitimate, and previously left the fresh token unused until the
+///   server eventually rejected the old certificate enough times for
+///   <c>HeartbeatWorker</c>'s self-heal to notice (agent v0.14.3). If so,
+///   drop the local certificate right now instead of waiting for that.
+///   Otherwise, attach it (idempotent — a no-op once already attached and
+///   <see cref="IAgentCertificateState.IsReady"/>) and idle for
+///   <see cref="AgentOptions.CertificateMaintenanceIntervalSeconds"/>
 ///   before checking again. Still looping, not returning, so a certificate
-///   lost later is noticed on a later iteration — this is what makes
-///   "no restart needed" actually true, not just true at startup.
+///   lost later (through this path or an outside one) is noticed on a
+///   later iteration — this is what makes "no restart needed" actually
+///   true, not just true at startup.
 /// - If no certificate is present — never registered yet, or one was lost
 ///   since this process started, the same recovery path either way — the
 ///   config store is re-read directly (bypassing the cached
@@ -76,6 +85,45 @@ public class RegistrationWorker(
             while (!stoppingToken.IsCancellationRequested)
             {
                 var certificate = certificateStore.Load();
+                if (certificate is not null)
+                {
+                    // A fresh registration token can show up in the config
+                    // store (Agents/AgentService.ReissueCertificateAsync,
+                    // server-side) while this agent is still running fine
+                    // on its OLD certificate — re-issuing for an agent
+                    // that's still healthy locally (suspected compromise,
+                    // not loss) is a legitimate admin action, not just the
+                    // lost/wiped case this loop's other branch already
+                    // handles. Previously that token just sat unused: this
+                    // branch never looked at RegistrationToken at all, so
+                    // the agent kept authenticating with the still-present
+                    // old certificate indefinitely — recovering only once
+                    // the server actually rejected it enough times for
+                    // HeartbeatWorker's self-heal (updatewatch2-server#11/
+                    // updatewatch2-agent#5) to notice and drop it, and only
+                    // if an admin also remembered to separately clear
+                    // ClientCertificateThumbprint/delete the local
+                    // certificate by hand (previously undocumented). A
+                    // config-file token that differs from what this agent
+                    // already consumed is itself the authoritative signal:
+                    // drop the local certificate right now, the same
+                    // drop-and-let-the-loop-recover-it move self-heal
+                    // already performs after a rejection, so the token an
+                    // admin just placed actually gets used on this same
+                    // iteration instead of silently waiting on rejection.
+                    var latestConfig = configStore.Load();
+                    if (latestConfig.RegistrationToken is { Length: > 0 } freshToken && freshToken != options.RegistrationToken)
+                    {
+                        logger.LogInformation(
+                            "A new registration token was placed while a client certificate is still present locally — " +
+                            "dropping the local certificate so the fresh token is used instead of the old one.");
+                        certificateStore.Delete(certificate.GetCertHashString(HashAlgorithmName.SHA256));
+                        sharedHttpHandler.SslOptions.ClientCertificates!.Clear();
+                        options.RegistrationToken = freshToken;
+                        certificate = null;
+                    }
+                }
+
                 if (certificate is not null)
                 {
                     if (!certificateState.IsReady)

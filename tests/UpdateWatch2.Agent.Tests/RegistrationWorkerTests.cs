@@ -198,6 +198,69 @@ public class RegistrationWorkerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_fresh_registration_token_is_used_even_though_the_old_certificate_is_still_present_locally()
+    {
+        // Regression test: an admin re-issuing a certificate for an agent
+        // that's still running fine (suspected compromise, not a lost/wiped
+        // certificate) writes a fresh RegistrationToken into the config
+        // store without also clearing ClientCertificateThumbprint — the
+        // still-present old certificate used to mean this loop's
+        // certificate-present branch never even looked at the new token,
+        // so it just sat unused. The token itself must now be enough:
+        // dropping the still-present old certificate and registering with
+        // it, with no separate manual clear required.
+        var oldCertificate = CreateThrowawayCertificate("still-healthy-host");
+        var certificateStore = new FakeClientCertificateStore(existing: oldCertificate);
+        var configStore = new FakeAgentConfigStore();
+        var options = new AgentOptions { CertificateMaintenanceIntervalSeconds = 1, RegistrationRetryIntervalSeconds = 1 };
+        var certificateState = new AgentCertificateState();
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } };
+
+        var reissuedCertificate = CreateThrowawayCertificate("still-healthy-host-reissued");
+        var reissuedPfxBase64 = Convert.ToBase64String(reissuedCertificate.Export(X509ContentType.Pfx));
+        var serverClient = new FakeServerClient(onRegister: token =>
+            token == "forced-reissue-token"
+                ? new RegisterResult(Approved: true, RegistrationToken: null, Certificate: reissuedPfxBase64, ProtocolVersion: "0.1.0")
+                : new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: "0.1.0"));
+
+        var worker = new RegistrationWorker(
+            options, configStore, new FileCaTrustStore(_caPath), certificateStore,
+            handler, () => serverClient, certificateState, new RegistrationWakeSignal(), NullLogger<RegistrationWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            // First reach the idle, already-certified steady state — the
+            // old certificate is attached and nothing else has happened yet.
+            await certificateState.WaitUntilReadyAsync(TimeoutToken());
+
+            // The old certificate is deliberately left in place (no
+            // SimulateLoss() call) — only a fresh token shows up, exactly
+            // as an admin's forced re-issuance without a manual thumbprint
+            // clear would look like.
+            configStore.ToReturn = new AgentOptions { RegistrationToken = "forced-reissue-token" };
+
+            await WaitUntilAsync(
+                () => certificateStore.DeletedThumbprints.Contains(oldCertificate.GetCertHashString(HashAlgorithmName.SHA256)),
+                TimeSpan.FromSeconds(5));
+            await WaitUntilAsync(
+                () => certificateStore.Saved is not null &&
+                      certificateStore.Saved.GetCertHashString(HashAlgorithmName.SHA256) ==
+                      reissuedCertificate.GetCertHashString(HashAlgorithmName.SHA256),
+                TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+
+        Assert.Contains(oldCertificate.GetCertHashString(HashAlgorithmName.SHA256), certificateStore.DeletedThumbprints);
+        Assert.Single(handler.SslOptions.ClientCertificates!);
+        var reattached = Assert.IsType<X509Certificate2>(handler.SslOptions.ClientCertificates![0]);
+        Assert.Equal(reissuedCertificate.GetCertHashString(HashAlgorithmName.SHA256), reattached.GetCertHashString(HashAlgorithmName.SHA256));
+    }
+
+    [Fact]
     public async Task A_registration_attempt_that_times_out_is_logged_and_retried_instead_of_silently_ending_the_worker()
     {
         // Regression test for a real, live-diagnosed bug: HttpClient's own
