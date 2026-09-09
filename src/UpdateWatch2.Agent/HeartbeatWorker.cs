@@ -57,6 +57,7 @@ public class HeartbeatWorker(
     IUpdateCheckTrigger updateCheckTrigger,
     IAgentSelfUpdater selfUpdater,
     SelfUpdateStagingCleaner selfUpdateStagingCleaner,
+    IRegistrationWakeSignal wakeSignal,
     ILogger<HeartbeatWorker> logger) : BackgroundService
 {
     // A single 401/403 could in principle be some transient fluke this
@@ -319,9 +320,19 @@ public class HeartbeatWorker(
         var current = certificateStore.Load();
         if (current is null)
         {
-            // Already gone by some other path — nothing left to clean up;
-            // RegistrationWorker's maintenance loop already owns recovery
-            // from here.
+            // Already gone by some other path (e.g. deleted outside this
+            // agent's own code — manual cleanup on the host). Nothing left
+            // in the local store to clean up, but sharedHttpHandler.SslOptions.ClientCertificates
+            // may still be holding the stale in-memory certificate object
+            // from whenever it was first attached — deleting a certificate
+            // from disk/the OS store never retroactively affects an
+            // already-loaded X509Certificate2 instance a handler is
+            // holding (documented CLAUDE.md finding for the renewal path;
+            // the same is true here). Clear it defensively so this agent
+            // stops presenting it, and still wake RegistrationWorker so it
+            // re-checks now rather than waiting out its own poll interval.
+            sharedHttpHandler.SslOptions.ClientCertificates!.Clear();
+            wakeSignal.RequestImmediateCheck();
             return;
         }
 
@@ -338,6 +349,12 @@ public class HeartbeatWorker(
         // Not Add-alongside — an already-rejected certificate has no
         // business staying attached to the handler at all.
         sharedHttpHandler.SslOptions.ClientCertificates!.Clear();
+
+        // Wakes RegistrationWorker immediately instead of it waiting out
+        // its own CertificateMaintenanceIntervalSeconds poll (up to 15
+        // minutes by default) — see IRegistrationWakeSignal's own doc
+        // comment for the real report this fixed.
+        wakeSignal.RequestImmediateCheck();
     }
 
     private async Task CheckProtocolVersionAsync(CancellationToken ct)

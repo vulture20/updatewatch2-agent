@@ -310,14 +310,58 @@ public class WorkerTests
             return AliveOutcome.CertificateRejected;
         });
 
+        var wakeSignal = new FakeRegistrationWakeSignal();
         var worker = CreateHeartbeatWorker(
             new AgentOptions { AliveIntervalMinutes = 0 },
-            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler, wakeSignal: wakeSignal);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
         Assert.Contains(certificate.GetCertHashString(HashAlgorithmName.SHA256), certificateStore.DeletedThumbprints);
         Assert.Empty(handler.SslOptions.ClientCertificates!);
+        // The actual fix for a real user report: self-heal must wake
+        // RegistrationWorker immediately rather than leaving it to notice
+        // on its own next CertificateMaintenanceIntervalSeconds poll (up
+        // to 15 minutes later by default).
+        Assert.True(wakeSignal.RequestCount >= 1);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_clears_a_stale_handler_certificate_and_wakes_registration_even_when_the_local_store_is_already_empty()
+    {
+        // The local certificate can go missing through a path this agent's
+        // own code never drove (manual cleanup on the host, e.g.) — in that
+        // case certificateStore.Load() is already null by the time self-heal
+        // runs, but sharedHttpHandler.SslOptions.ClientCertificates can
+        // still be holding the stale in-memory certificate object from
+        // whenever it was first attached (deleting a certificate from disk/
+        // the OS store never retroactively affects an already-loaded
+        // X509Certificate2 instance a handler is holding). Both the stale
+        // handler certificate and the wake-up must still happen even
+        // though there was nothing left in the local store to delete.
+        var cts = new CancellationTokenSource();
+        var stale = CreateThrowawayCertificate("externally-removed-host", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var certificateStore = new FakeClientCertificateStore(existing: null); // already empty
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [stale] } }; // handler doesn't know yet
+
+        var client = new FakeServerClient(onSendAliveOutcome: callCount =>
+        {
+            if (callCount >= 2)
+            {
+                cts.Cancel();
+            }
+            return AliveOutcome.CertificateRejected;
+        });
+
+        var wakeSignal = new FakeRegistrationWakeSignal();
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 0 },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler, wakeSignal: wakeSignal);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Empty(handler.SslOptions.ClientCertificates!);
+        Assert.True(wakeSignal.RequestCount >= 1);
     }
 
     [Fact]
@@ -610,7 +654,8 @@ public class WorkerTests
         IUpdateCheckTrigger? updateCheckTrigger = null,
         FileCaTrustStore? caTrustStore = null,
         IAgentSelfUpdater? selfUpdater = null,
-        SelfUpdateStagingCleaner? selfUpdateStagingCleaner = null) =>
+        SelfUpdateStagingCleaner? selfUpdateStagingCleaner = null,
+        IRegistrationWakeSignal? wakeSignal = null) =>
         new(options, client, certificateState,
             certificateStore ?? new FakeClientCertificateStore(existing: null),
             caTrustStore ?? new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem")),
@@ -625,6 +670,7 @@ public class WorkerTests
             selfUpdateStagingCleaner ?? new SelfUpdateStagingCleaner(
                 Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-selfupdate-staging-{Guid.NewGuid()}"),
                 NullLogger<SelfUpdateStagingCleaner>.Instance),
+            wakeSignal ?? new RegistrationWakeSignal(),
             logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     private static AgentCertificateState ReadyCertificateState()
@@ -773,6 +819,15 @@ public class WorkerTests
         public void Save(byte[] pfxBytes) => Saved = X509CertificateLoader.LoadPkcs12(pfxBytes, password: null);
 
         public void Delete(string thumbprintSha256) => DeletedThumbprints.Add(thumbprintSha256);
+    }
+
+    private class FakeRegistrationWakeSignal : IRegistrationWakeSignal
+    {
+        public int RequestCount { get; private set; }
+
+        public void RequestImmediateCheck() => RequestCount++;
+
+        public Task WaitForWakeOrTimeoutAsync(TimeSpan timeout, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private static X509Certificate2 CreateThrowawayCertificate(string subjectCn, DateTimeOffset notBefore, DateTimeOffset notAfter)

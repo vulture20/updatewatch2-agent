@@ -10,6 +10,34 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.14.2] - 2026-09-09
+
+### Fixed
+
+- After an admin-mediated certificate re-issuance while this agent
+  kept running, reconnection sometimes appeared to simply never
+  happen — the log kept repeating "Alive heartbeat rejected with
+  status Forbidden — this agent's certificate may no longer be
+  trusted by the server." Root cause: `HeartbeatWorker`'s self-heal
+  (`updatewatch2-server#11`/`updatewatch2-agent#5`) needs up to two
+  heartbeat intervals to even decide the certificate is rejected, and
+  `RegistrationWorker` then didn't notice the certificate was gone
+  until its own next scheduled poll — up to
+  `CertificateMaintenanceIntervalSeconds` later (15 minutes by
+  default) — with nothing logged in between to say recovery was even
+  pending. Recovery did eventually happen, just slowly enough that an
+  admin watching for a few minutes reasonably concluded it wasn't
+  working. New `Certificates/IRegistrationWakeSignal`: self-heal now
+  wakes `RegistrationWorker` immediately instead of it waiting out
+  that interval, collapsing the worst case from up to ~25 minutes
+  down to effectively the self-heal threshold delay only. Also
+  defensively clears the shared HTTP handler's stale in-memory client
+  certificate (and wakes registration) even when the local
+  certificate store is already empty by the time self-heal runs —
+  e.g. a certificate removed by something other than this agent's own
+  code — a case the previous "already gone, nothing to do" early
+  return silently skipped.
+
 ## [0.14.1] - 2026-09-09
 
 ### Fixed

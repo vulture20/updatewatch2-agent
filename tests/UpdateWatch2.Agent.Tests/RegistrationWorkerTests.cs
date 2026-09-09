@@ -30,7 +30,7 @@ public class RegistrationWorkerTests : IDisposable
 
         var worker = new RegistrationWorker(
             new AgentOptions(), new FakeAgentConfigStore(), new FileCaTrustStore(_caPath), certificateStore,
-            handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
+            handler, () => serverClient, certificateState, new RegistrationWakeSignal(), NullLogger<RegistrationWorker>.Instance);
 
         await RunUntilReadyAsync(worker, certificateState);
 
@@ -65,7 +65,7 @@ public class RegistrationWorkerTests : IDisposable
 
         var worker = new RegistrationWorker(
             options, configStore, new FileCaTrustStore(_caPath), certificateStore,
-            handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
+            handler, () => serverClient, certificateState, new RegistrationWakeSignal(), NullLogger<RegistrationWorker>.Instance);
 
         await RunUntilReadyAsync(worker, certificateState, timeout: TimeSpan.FromSeconds(5));
 
@@ -76,6 +76,65 @@ public class RegistrationWorkerTests : IDisposable
         Assert.Null(options.RegistrationToken); // cleared once delivered
         Assert.True(certificateState.IsReady);
         Assert.Single(handler.SslOptions.ClientCertificates!);
+    }
+
+    [Fact]
+    public async Task A_wake_signal_recovers_a_lost_certificate_promptly_instead_of_waiting_out_the_maintenance_interval()
+    {
+        // Regression test for a real user report: after an admin-mediated
+        // reissuance while this agent kept running, reconnection sometimes
+        // appeared to simply never happen. It does eventually — but only
+        // once RegistrationWorker's own long CertificateMaintenanceIntervalSeconds
+        // sleep happens to finish (worst case, several minutes on its own,
+        // stacking on top of HeartbeatWorker's own self-heal delay), during
+        // which nothing is logged to say recovery is even pending. This
+        // proves IRegistrationWakeSignal actually collapses that wait: a
+        // deliberately very long interval is used here specifically so a
+        // passing test can only mean the signal — not the interval merely
+        // elapsing — is what caused the prompt re-registration.
+        var originalCertificate = CreateThrowawayCertificate("wake-signal-host");
+        var certificateStore = new FakeClientCertificateStore(existing: originalCertificate);
+        var configStore = new FakeAgentConfigStore();
+        var options = new AgentOptions { CertificateMaintenanceIntervalSeconds = 3600, RegistrationRetryIntervalSeconds = 1 };
+        var certificateState = new AgentCertificateState();
+        var wakeSignal = new RegistrationWakeSignal();
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } };
+
+        var recoveredCertificate = CreateThrowawayCertificate("wake-signal-host-recovered");
+        var recoveredPfxBase64 = Convert.ToBase64String(recoveredCertificate.Export(X509ContentType.Pfx));
+        var serverClient = new FakeServerClient(onRegister: token =>
+            token == "reissued-token"
+                ? new RegisterResult(Approved: true, RegistrationToken: null, Certificate: recoveredPfxBase64, ProtocolVersion: "0.1.0")
+                : new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: "0.1.0"));
+
+        var worker = new RegistrationWorker(
+            options, configStore, new FileCaTrustStore(_caPath), certificateStore,
+            handler, () => serverClient, certificateState, wakeSignal, NullLogger<RegistrationWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await certificateState.WaitUntilReadyAsync(TimeoutToken());
+
+            // Same admin-recovery setup as the sibling test above, but the
+            // wake signal — not a short interval — is what should make
+            // this recover quickly.
+            certificateStore.SimulateLoss();
+            configStore.ToReturn = new AgentOptions { RegistrationToken = "reissued-token" };
+            wakeSignal.RequestImmediateCheck();
+
+            await WaitUntilAsync(
+                () => certificateStore.Saved is not null && ReferenceEquals(certificateStore.Saved, certificateStore.Load()),
+                TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+
+        Assert.Equal(
+            recoveredCertificate.GetCertHashString(HashAlgorithmName.SHA256),
+            certificateStore.Saved!.GetCertHashString(HashAlgorithmName.SHA256));
     }
 
     [Fact]
@@ -103,7 +162,7 @@ public class RegistrationWorkerTests : IDisposable
 
         var worker = new RegistrationWorker(
             options, configStore, new FileCaTrustStore(_caPath), certificateStore,
-            handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
+            handler, () => serverClient, certificateState, new RegistrationWakeSignal(), NullLogger<RegistrationWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         try
@@ -178,7 +237,7 @@ public class RegistrationWorkerTests : IDisposable
 
         var worker = new RegistrationWorker(
             options, configStore, new FileCaTrustStore(_caPath), certificateStore,
-            handler, () => serverClient, certificateState, NullLogger<RegistrationWorker>.Instance);
+            handler, () => serverClient, certificateState, new RegistrationWakeSignal(), NullLogger<RegistrationWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         try

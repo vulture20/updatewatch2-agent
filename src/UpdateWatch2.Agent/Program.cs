@@ -158,6 +158,7 @@ var caTrustStorePath = OperatingSystem.IsWindows()
 builder.Services.AddSingleton(new FileCaTrustStore(caTrustStorePath));
 
 builder.Services.AddSingleton<IAgentCertificateState, AgentCertificateState>();
+builder.Services.AddSingleton<IRegistrationWakeSignal, RegistrationWakeSignal>();
 builder.Services.AddSingleton<PinnedServerCertificateValidator>();
 
 // One shared handler for both the registration flow and the typed

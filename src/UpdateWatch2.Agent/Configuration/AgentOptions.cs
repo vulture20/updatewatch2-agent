@@ -69,13 +69,21 @@ public class AgentOptions
     public int CertificateRenewalLeadTimeDays { get; set; } = 60;
 
     /// <summary>
-    /// How often <see cref="UpdateWatch2.Agent.RegistrationWorker"/>'s persistent maintenance
-    /// loop re-checks its local certificate once one is already attached
-    /// (updatewatch2-agent#3) — deliberately coarser than
-    /// <see cref="RegistrationRetryIntervalSeconds"/>, which stays reserved
-    /// for actively onboarding/recovering, not steady-state idling. In
-    /// seconds, not minutes (unlike most of this class' other intervals),
-    /// so a short value is representable for tests without a whole-minute floor.
+    /// The upper bound on how often <see cref="UpdateWatch2.Agent.RegistrationWorker"/>'s
+    /// persistent maintenance loop re-checks its local certificate once one
+    /// is already attached (updatewatch2-agent#3) — deliberately coarser
+    /// than <see cref="RegistrationRetryIntervalSeconds"/>, which stays
+    /// reserved for actively onboarding/recovering, not steady-state
+    /// idling. Only an upper bound, not the actual recovery latency,
+    /// though: <see cref="UpdateWatch2.Agent.HeartbeatWorker"/>'s self-heal
+    /// (updatewatch2-server#11/updatewatch2-agent#5) wakes this loop
+    /// immediately via <see cref="Certificates.IRegistrationWakeSignal"/>
+    /// the moment it drops a rejected certificate, rather than leaving
+    /// recovery to wait out this full interval — added after a real user
+    /// report that recovery sometimes appeared to simply never happen; it
+    /// did, just slowly, with nothing logged in the meantime. In seconds,
+    /// not minutes (unlike most of this class' other intervals), so a
+    /// short value is representable for tests without a whole-minute floor.
     /// </summary>
     public int CertificateMaintenanceIntervalSeconds { get; set; } = 900;
 

@@ -64,6 +64,7 @@ public class RegistrationWorker(
     SocketsHttpHandler sharedHttpHandler,
     Func<IServerClient> createBootstrapClient,
     IAgentCertificateState certificateState,
+    IRegistrationWakeSignal wakeSignal,
     ILogger<RegistrationWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -83,7 +84,17 @@ public class RegistrationWorker(
                         logger.LogInformation("Using previously issued client certificate — skipping registration.");
                     }
 
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, options.CertificateMaintenanceIntervalSeconds)), stoppingToken);
+                    // Not a plain Task.Delay: HeartbeatWorker's self-heal
+                    // (updatewatch2-server#11/updatewatch2-agent#5) calls
+                    // IRegistrationWakeSignal.RequestImmediateCheck() the
+                    // moment it drops a rejected certificate, so this
+                    // notices and re-checks right away instead of only on
+                    // its own next scheduled poll, up to
+                    // CertificateMaintenanceIntervalSeconds (15 minutes by
+                    // default) later — see IRegistrationWakeSignal's own
+                    // doc comment for the real report this fixed.
+                    await wakeSignal.WaitForWakeOrTimeoutAsync(
+                        TimeSpan.FromSeconds(Math.Max(1, options.CertificateMaintenanceIntervalSeconds)), stoppingToken);
                     continue;
                 }
 
