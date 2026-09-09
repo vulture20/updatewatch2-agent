@@ -38,6 +38,24 @@ EOF
     chown root:root "$CONFIG_FILE"
 fi
 
+# Unlike agent.conf/agent.pfx, this is a PUBLIC certificate — FileCaTrustStore
+# only ever holds public key material — so world-readable is correct, not a
+# secret-exposure concern. This block only NORMALIZES an already-present
+# file; it never creates or fetches one itself. fpm-built .deb/.rpm
+# packages have no install-time parameter mechanism (unlike the NSIS
+# Windows installer's /CACERT= switch), so pre-seeding the CA here to
+# close the trust-on-first-use (TOFU) window is a manual step: an admin
+# downloads the server's CA root (admin UI's Certificates tab, or
+# GET /api/admin/certificate-authority/download) and scp's it to this
+# path themselves, before this package's first `systemctl start` —
+# normalizing ownership/permissions here just makes that hand-placed file
+# forgiving of whatever perms it happened to arrive with.
+CA_FILE="$CONFIG_DIR/ca.pem"
+if [ -e "$CA_FILE" ]; then
+    chown root:root "$CA_FILE"
+    chmod 644 "$CA_FILE"
+fi
+
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
     systemctl enable updatewatch2-agent.service || true

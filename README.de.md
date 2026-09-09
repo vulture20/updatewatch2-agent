@@ -61,6 +61,16 @@ UpdateWatch2Agent-Setup-0.12.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.co
 
 Dies installiert und startet den Windows-Dienst `UpdateWatch2 Agent` und schreibt Serveradresse/-port nach `HKLM\SOFTWARE\UpdateWatch2\Agent` (per ACL auf Administrators/SYSTEM beschränkt). Ein erneuter Lauf des Installers über eine bestehende Installation führt ein Upgrade an Ort und Stelle durch. Der Deinstaller entfernt Dienst, Installationsverzeichnis, Registry-Schlüssel und (nach bestem Bemühen) das eigene Client-Zertifikat des Agents aus dem Computer-Zertifikatsspeicher.
 
+#### CA-Zertifikat vorab hinterlegen (schließt das Trust-on-First-Use-Fenster)
+
+Standardmäßig vertraut ein frisch installierter Agent beim allerersten Kontakt einfach dem CA-Zertifikat, das der Server ihm gibt ("Trust-on-First-Use", TOFU) — ein Angreifer, der genau in diesem Moment im Netz sitzt, könnte die Verbindung abfangen und dem Agenten eine gefälschte CA unterschieben. Um dieses Fenster zu schließen, das aktuelle CA-Wurzelzertifikat des Servers vorab herunterladen — über den Certificates-Tab der Admin-Oberfläche ("CA-Wurzelzertifikat herunterladen") oder direkt per `GET /api/admin/certificate-authority/download`, beides session-authentifiziert — und per `/CACERT=` an den Installer übergeben:
+
+```powershell
+UpdateWatch2Agent-Setup-0.15.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8796 /CACERT=C:\temp\updatewatch2-ca.crt
+```
+
+Das ist optional und vollständig abwärtskompatibel — ohne `/CACERT=` bleibt das ursprüngliche TOFU-Verhalten unverändert.
+
 ### Linux (`.deb` / `.rpm`, x86_64)
 
 ```bash
@@ -79,6 +89,8 @@ sudo systemctl start updatewatch2-agent
 ```
 
 Ein Upgrade über einen bereits konfigurierten, bereits laufenden Agent startet den Dienst automatisch neu, um die neue Binärdatei zu übernehmen — kein manueller Schritt nötig.
+
+`.deb`/`.rpm`-Pakete haben keinen Mechanismus für Installations-Parameter, daher gibt es unter Linux kein Äquivalent zu `/CACERT=` oben — stattdessen das heruntergeladene CA-Zertifikat selbst unter `/etc/updatewatch2/ca.pem` ablegen, *bevor* `systemctl start updatewatch2-agent` zum ersten Mal läuft, um dasselbe Fenster zu schließen. `postinst.sh` normalisiert Besitzer/Rechte (`root:root`, world-readable), falls beim Paket-Install schon eine Datei dort liegt.
 
 ### Konfigurationsreferenz
 

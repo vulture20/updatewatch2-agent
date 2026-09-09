@@ -61,6 +61,16 @@ UpdateWatch2Agent-Setup-0.12.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.co
 
 This installs and starts the `UpdateWatch2 Agent` Windows service, and writes the server address/port to `HKLM\SOFTWARE\UpdateWatch2\Agent` (ACL-restricted to Administrators/SYSTEM). Re-running the installer on top of an existing install performs an upgrade in place. The uninstaller removes the service, install directory, registry key, and (best-effort) this agent's own client certificate from the machine store.
 
+#### Pre-seeding the CA certificate (closing the trust-on-first-use window)
+
+By default, a freshly installed agent trusts whatever CA certificate the server hands it on its very first contact ("trust-on-first-use", TOFU) — a network attacker present at *exactly* that moment could intercept it and hand the agent a malicious CA instead. To close that window, download the server's current CA root certificate ahead of time — from the admin UI's Certificates tab ("Download CA root certificate"), or `GET /api/admin/certificate-authority/download` directly, both session-authenticated — and pass it to the installer via `/CACERT=`:
+
+```powershell
+UpdateWatch2Agent-Setup-0.15.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8796 /CACERT=C:\temp\updatewatch2-ca.crt
+```
+
+This is optional and fully backward compatible — omit `/CACERT=` and the original TOFU behavior is unchanged.
+
 ### Linux (`.deb` / `.rpm`, x86_64)
 
 ```bash
@@ -79,6 +89,8 @@ sudo systemctl start updatewatch2-agent
 ```
 
 An upgrade over an already-configured, already-running agent restarts the service automatically to pick up the new binary — no manual step needed.
+
+`.deb`/`.rpm` packages have no install-time parameter mechanism, so there's no Linux equivalent of `/CACERT=` above — instead, place the same downloaded CA certificate at `/etc/updatewatch2/ca.pem` yourself *before* the first `systemctl start updatewatch2-agent`, to close the trust-on-first-use window the same way. `postinst.sh` normalizes its ownership/permissions (`root:root`, world-readable) if it finds one already there when the package installs.
 
 ### Configuration reference
 

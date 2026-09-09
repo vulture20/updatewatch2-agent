@@ -10,6 +10,55 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.15.0] - 2026-09-09
+
+### Added
+
+- New NSIS silent-install switch `/CACERT=<path>` (Windows): pre-seeds the
+  server's CA root certificate at `%ProgramData%\UpdateWatch2\ca.pem` —
+  the same fixed path `FileCaTrustStore` reads on Windows — *before* the
+  service's first start, so `RegistrationWorker.EnsureCaPinnedAsync`'s
+  existing "already pinned, skip the fetch" early-return applies from this
+  agent's very first tick. Closes the trust-on-first-use (TOFU) window a
+  freshly installed, un-pre-seeded agent otherwise has at its own very
+  first contact with the server — a network attacker present at exactly
+  that moment could previously hand it a malicious CA. Get the file from
+  the server admin UI's Certificates tab (server v0.26.0's new
+  session-authenticated `GET /api/admin/certificate-authority/download`)
+  before running this installer. Omitting the switch leaves TOFU behavior
+  completely unchanged — fully backward compatible.
+- `installer/linux/postinst.sh` now normalizes ownership/permissions
+  (`root:root`, `644` — world-readable, since unlike `agent.conf`/
+  `agent.pfx` this is a public certificate, not a secret) of a
+  `/etc/updatewatch2/ca.pem` an admin has manually pre-staged ahead of the
+  first `systemctl start`. `fpm`-built `.deb`/`.rpm` packages have no
+  install-time parameter mechanism, so unlike the Windows NSIS switch
+  above, closing TOFU on Linux stays a manual scp-then-place workflow —
+  this just makes a hand-placed file forgiving of whatever permissions it
+  happened to arrive with, never creating or fetching one itself.
+- New `RegistrationWorkerTests` case,
+  `Skips_fetching_the_CA_certificate_when_one_is_already_pinned_but_registration_still_proceeds`,
+  covering the specific gap the two changes above depend on (CA already
+  pinned, but no client certificate yet) — distinct from the existing
+  `Skips_the_network_entirely_when_a_client_certificate_is_already_stored`
+  test, which skips via an entirely different branch.
+
+### Fixed
+
+- `installer/nsis/setup.nsi` called `SetShellVarContext all` only inside
+  `Section "Uninstall"`, right before its one existing `$APPDATA`
+  reference — its own comment incorrectly claimed this was already set in
+  `.onInit`, but it never was. Harmless until now, since nothing during
+  install itself ever referenced `$APPDATA` — but the new `/CACERT=` copy
+  step above does, and without this fix would have silently resolved
+  `$APPDATA` to the installing user's own per-user roaming profile instead
+  of the shared `%ProgramData%` path `FileCaTrustStore` actually reads.
+  Found while implementing the `/CACERT=` feature, not by a live install —
+  fixed by adding the same call, independently, to both `.onInit` and
+  `Section "UpdateWatch2 Agent" SEC_MAIN` (the same belt-and-suspenders
+  pattern this script already uses for `SetRegView 64`), and correcting
+  the now-inaccurate comment in the Uninstall section.
+
 ## [0.14.3] - 2026-09-09
 
 ### Fixed

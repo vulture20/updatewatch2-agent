@@ -9,6 +9,18 @@
 ; for the server address/port on an interactive install (silently
 ; configurable via /SERVERADDRESS=/SERVERPORT= for unattended rollouts),
 ; and writes them to HKLM\SOFTWARE\UpdateWatch2\Agent — the same registry
+;
+; /CACERT=<path> (silent-install only, no interactive UI for it) lets
+; whoever runs this installer pre-seed the server's CA root certificate
+; at %ProgramData%\UpdateWatch2\ca.pem — the same fixed path
+; FileCaTrustStore reads on Windows — BEFORE the service's first start.
+; RegistrationWorker.EnsureCaPinnedAsync's existing early-return then skips
+; fetching the CA over the network entirely, closing the trust-on-first-use
+; (TOFU) window a fresh, un-pre-seeded agent otherwise has at its very
+; first contact with the server. Download the file from the server admin
+; UI's Certificates tab (GET /api/admin/certificate-authority/download,
+; session-authenticated) ahead of running this installer. Omitting the
+; switch leaves this feature a no-op — TOFU behaves exactly as before.
 ; location WindowsRegistryConfigStore reads/writes at runtime, so nothing
 ; installer-specific leaks into the agent's own config model. Every other
 ; AgentOptions field (update-check interval/jitter, alive interval, log
@@ -75,6 +87,7 @@ Var ServerAddress
 Var ServerPort
 Var ServerAddressField
 Var ServerPortField
+Var CaCertPath
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "..\..\LICENSE"
@@ -98,6 +111,14 @@ Page custom ServerConfigPageCreate ServerConfigPageLeave
 ; ---------------------------------------------------------------------
 Function .onInit
   SetRegView 64
+  ; Needed before anything below references $APPDATA (the /CACERT= copy in
+  ; SEC_MAIN) — without this, NSIS's default per-user shell context would
+  ; resolve $APPDATA to the installing user's own roaming profile instead
+  ; of the shared %ProgramData% path FileCaTrustStore actually reads on
+  ; Windows. Previously only set in the Uninstall section (whose own
+  ; comment incorrectly claimed it was already set here) — harmless before
+  ; now because nothing in SEC_MAIN ever referenced $APPDATA.
+  SetShellVarContext all
 
   StrCpy $ServerPort "8796"
   ReadRegStr $0 HKLM "${CONFIG_KEY}" "ServerAddress"
@@ -116,6 +137,17 @@ Function .onInit
   ${GetOptions} $CMDLINE "/SERVERPORT=" $0
   ${IfNot} ${Errors}
     StrCpy $ServerPort $0
+  ${EndIf}
+
+  ; No registry pre-fill for this one, unlike ServerAddress/ServerPort
+  ; above — there's nothing to "remember" across a re-run; if /CACERT=
+  ; isn't passed on a given invocation, $CaCertPath simply stays empty and
+  ; SEC_MAIN's copy step below is skipped that run. Parsed unconditionally,
+  ; not IfSilent-gated — same as /SERVERADDRESS=/SERVERPORT= above, whose
+  ; *dialog display* is silent-gated but whose command-line parsing isn't.
+  ${GetOptions} $CMDLINE "/CACERT=" $0
+  ${IfNot} ${Errors}
+    StrCpy $CaCertPath $0
   ${EndIf}
 FunctionEnd
 
@@ -169,6 +201,10 @@ FunctionEnd
 ; ---------------------------------------------------------------------
 Section "UpdateWatch2 Agent" SEC_MAIN
   SetRegView 64
+  ; See the identical call (and its comment) in .onInit — set again here,
+  ; independently, since this Section is what actually references $APPDATA
+  ; below.
+  SetShellVarContext all
   SetOutPath "$INSTDIR"
 
   ; Existing service, if any (upgrade case) — stop and remove before
@@ -187,6 +223,23 @@ Section "UpdateWatch2 Agent" SEC_MAIN
   ; file itself is just "LICENSE", no extension) so it has a familiar
   ; double-click-opens-Notepad association on Windows.
   File "/oname=LICENSE.txt" "..\..\LICENSE"
+
+  ; Pre-seed the server's CA root certificate, if /CACERT= supplied one,
+  ; BEFORE the service is ever created/started below — this is what makes
+  ; RegistrationWorker.EnsureCaPinnedAsync's existing "already pinned, skip
+  ; the fetch" early-return apply from this agent's very first tick, rather
+  ; than only after it's had at least one (potentially interceptable)
+  ; network round-trip to learn the CA itself (trust-on-first-use). Empty
+  ; $CaCertPath (the default — no switch passed) skips this block entirely,
+  ; leaving that original TOFU behavior completely unchanged.
+  ${If} $CaCertPath != ""
+    ${IfNot} ${FileExists} "$CaCertPath"
+      MessageBox MB_ICONSTOP "The file specified via /CACERT= does not exist: $CaCertPath"
+      Abort
+    ${EndIf}
+    CreateDirectory "$APPDATA\UpdateWatch2"
+    CopyFiles /SILENT "$CaCertPath" "$APPDATA\UpdateWatch2\ca.pem"
+  ${EndIf}
 
   ${If} $ServerAddress != ""
     WriteRegStr HKLM "${CONFIG_KEY}" "ServerAddress" "$ServerAddress"
@@ -243,12 +296,14 @@ Section "Uninstall"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 
-  ; The pinned server CA certificate FileCaTrustStore writes to
+  ; The pinned/pre-seeded server CA certificate FileCaTrustStore reads from
   ; %ProgramData%\UpdateWatch2\ca.pem — agent-owned, not shared with
   ; anything else; safe to remove wholesale on uninstall. $APPDATA
   ; resolves to the shared (CSIDL_COMMON_APPDATA / %ProgramData%) path
-  ; here, not the per-user one, because of SetShellVarContext all in
-  ; .onInit — NSIS has no separate $COMMONAPPDATA constant.
+  ; here, not the per-user one, because of this call — set independently
+  ; here (rather than relying on .onInit's own call having already run in
+  ; this process), same belt-and-suspenders reasoning as SetRegView 64
+  ; being set separately in every Function/Section that needs it.
   SetShellVarContext all
   RMDir /r "$APPDATA\UpdateWatch2"
 

@@ -41,6 +41,41 @@ public class RegistrationWorkerTests : IDisposable
     }
 
     [Fact]
+    public async Task Skips_fetching_the_CA_certificate_when_one_is_already_pinned_but_registration_still_proceeds()
+    {
+        // Simulates the NSIS /CACERT= switch (or a manually pre-staged
+        // Linux ca.pem): the CA trust file is already present on disk
+        // BEFORE this worker's very first tick, but no client certificate
+        // has been issued yet. Distinct from
+        // Skips_the_network_entirely_when_a_client_certificate_is_already_stored
+        // above, which skips via a completely different branch (an
+        // already-present *client* certificate) — this proves
+        // EnsureCaPinnedAsync's own early-return specifically, while
+        // registration itself still runs normally on top of it.
+        new FileCaTrustStore(_caPath).Save(CreateThrowawayCertificate("Pre-seeded CA").Export(X509ContentType.Cert));
+
+        var options = new AgentOptions { RegistrationRetryIntervalSeconds = 1 };
+        var issuedCertificate = CreateThrowawayCertificate("freshly-approved-host");
+        var issuedPfxBase64 = Convert.ToBase64String(issuedCertificate.Export(X509ContentType.Pfx));
+        var serverClient = new FakeServerClient(
+            onRegister: _ => new RegisterResult(Approved: true, RegistrationToken: null, Certificate: issuedPfxBase64, ProtocolVersion: "0.1.0"));
+        var certificateStore = new FakeClientCertificateStore(existing: null);
+        var certificateState = new AgentCertificateState();
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [] } };
+
+        var worker = new RegistrationWorker(
+            options, new FakeAgentConfigStore(), new FileCaTrustStore(_caPath), certificateStore,
+            handler, () => serverClient, certificateState, new RegistrationWakeSignal(), NullLogger<RegistrationWorker>.Instance);
+
+        await RunUntilReadyAsync(worker, certificateState);
+
+        Assert.Equal(0, serverClient.FetchCaCertificateCallCount);
+        Assert.True(serverClient.RegisterCallCount >= 1);
+        Assert.True(certificateState.IsReady);
+        Assert.NotNull(certificateStore.Saved);
+    }
+
+    [Fact]
     public async Task Pins_the_CA_then_polls_until_approved_and_stores_the_certificate()
     {
         var configStore = new FakeAgentConfigStore();
