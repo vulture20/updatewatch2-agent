@@ -10,6 +10,27 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.14.1] - 2026-09-09
+
+### Fixed
+
+- The compiled Windows binary's Company/Product/Copyright file-version
+  resource fields (Explorer's Details tab) were blank — `<Version>`
+  already fixed File version/Product version (agent v0.12.3), but
+  `<Company>`/`<Product>`/`<Copyright>` were never set at all. Now
+  reads "Copyright (C) 2026 Thorsten Schröpel", matching the copyright
+  line already used in README.md and the NSIS installer's own version
+  resource. Live-verified: a real self-contained win-x64 publish's
+  compiled `.exe` genuinely carries the string in its version
+  resource, not just reasoned about from the csproj change.
+- The NSIS installer never placed a copy of the license alongside the
+  installed binary — only shown once on the license-acceptance page
+  during setup, with no way to find it again afterward without
+  re-running the installer. `LICENSE` is now installed as
+  `LICENSE.txt` next to `UpdateWatch2.Agent.exe` in the install
+  directory, and removed on uninstall. Live-verified: a real
+  `makensis` build with the new `File` instruction compiles clean.
+
 ## [0.14.0] - 2026-09-08
 
 ### Changed

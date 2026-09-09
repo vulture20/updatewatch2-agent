@@ -6,6 +6,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-UpdateWatch2.Agent-d4d3427f-7dd8-4ee6-9e1b-d9d4c9767ff5</UserSecretsId>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <!-- Also embedded into the compiled binary's Windows file-version
+         resource (Explorer's Details tab: Company/Product/Copyright),
+         alongside <Version> below — previously unset, so those fields were
+         simply blank on a real installed agent, the same class of gap
+         <Version> itself was added to fix. Matches the copyright line
+         already used in README.md/the NSIS installer's own version
+         resource (installer/nsis/setup.nsi's LegalCopyright key). -->
+    <Authors>Thorsten Schröpel</Authors>
+    <Company>Thorsten Schröpel</Company>
+    <Product>UpdateWatch2 Agent</Product>
+    <Copyright>Copyright (C) 2026 Thorsten Schröpel</Copyright>
     <!-- Embedded into the compiled Windows binary (Explorer, Task Manager,
          services.msc, etc.); ignored on non-Windows builds. Same source as
          installer/nsis/icon.ico — see logos/ at the workspace root and

@@ -181,6 +181,12 @@ Section "UpdateWatch2 Agent" SEC_MAIN
 
   File "${PUBLISH_DIR}\UpdateWatch2.Agent.exe"
   File "${PUBLISH_DIR}\appsettings.json"
+  ; Alongside the binary, not just shown once on the license page during
+  ; setup — so it's still findable after installation without needing to
+  ; re-run/keep the installer around. Renamed with /oname= (the source
+  ; file itself is just "LICENSE", no extension) so it has a familiar
+  ; double-click-opens-Notepad association on Windows.
+  File "/oname=LICENSE.txt" "..\..\LICENSE"
 
   ${If} $ServerAddress != ""
     WriteRegStr HKLM "${CONFIG_KEY}" "ServerAddress" "$ServerAddress"
@@ -233,6 +239,7 @@ Section "Uninstall"
 
   Delete "$INSTDIR\UpdateWatch2.Agent.exe"
   Delete "$INSTDIR\appsettings.json"
+  Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 
