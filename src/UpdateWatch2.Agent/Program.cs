@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Security;
 using Microsoft.Extensions.Logging.EventLog;
@@ -256,8 +257,57 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<UpdateCheckWorker>
 
 builder.Services.AddHostedService<HeartbeatWorker>();
 
+// The Generic Host default (5s) is too short for this agent's own normal
+// shutdown path in practice: an in-flight HTTP call (registration/renewal
+// retry, alive heartbeat) can legitimately still be running, and — worse —
+// a real Windows Update search/download/install via WuaUpdateSession's
+// synchronous COM calls has no way to be aborted mid-call once started
+// (WindowsUpdateChecker's Task.Run(..., ct) only cancels the work item
+// before it starts running, never a COM call already in progress). 30s
+// gives ordinary in-flight work a real chance to finish cleanly without
+// meaningfully delaying a normal stop/restart — but it still cannot
+// unconditionally bound a real Windows Update install in progress, which
+// is exactly why the try/catch around host.Run() below exists too.
+builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(30));
+
 var host = builder.Build();
-host.Run();
+
+try
+{
+    host.Run();
+}
+catch (OperationCanceledException)
+{
+    // A real production crash this specific catch exists to prevent
+    // (agent v0.14.2, confirmed via a real Windows Event Viewer APPCRASH
+    // report): when stopping all IHostedServices takes longer than
+    // HostOptions.ShutdownTimeout (raised above, but — per that comment —
+    // still not something every case can be bounded by), Generic Host's
+    // own WindowsServiceLifetime.StopAsync throws OperationCanceledException
+    // on the now-cancelled token instead of just giving up quietly — and
+    // nothing in Microsoft.Extensions.Hosting catches that for you. Left
+    // unhandled, it propagates all the way out of host.Run() and crashes
+    // the entire process (the reported stack trace was exactly
+    // WindowsServiceLifetime.StopAsync -> Host.StopAsync ->
+    // WaitForShutdownAsync -> RunAsync -> Run -> Main). The service was
+    // already stopping when this happens — that is the whole reason this
+    // exception exists in the first place — so there is nothing to
+    // recover here, just exit instead of crashing. host.Services is
+    // already disposed by this point (RunAsync's own finally block runs
+    // before this exception reaches here), so this can't go through the
+    // app's normal DI-backed logging pipeline — write directly to the
+    // Windows Event Log instead, matching the SourceName the EventLog
+    // logging provider above is already registered under, so it still
+    // shows up grouped with this agent's other log entries in Event
+    // Viewer.
+    if (OperatingSystem.IsWindows())
+    {
+        EventLog.WriteEntry(
+            "UpdateWatch2 Agent",
+            "Shutdown did not complete within the configured timeout; exiting without a clean stop instead of crashing.",
+            EventLogEntryType.Warning);
+    }
+}
 
 static string MapLogLevel(string value) => value.Trim().ToUpperInvariant() switch
 {

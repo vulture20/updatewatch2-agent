@@ -10,6 +10,43 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.15.1] - 2026-09-10
+
+### Fixed
+
+- **A real production crash, reported via a Windows Event Viewer APPCRASH
+  entry for agent v0.14.2: an unhandled `System.OperationCanceledException`
+  from `WindowsServiceLifetime.StopAsync` (`Host.StopAsync` ->
+  `WaitForShutdownAsync` -> `RunAsync` -> `Run` -> `Main`), terminating the
+  entire process instead of stopping cleanly.** Generic Host's own
+  shutdown path throws this when stopping all `IHostedService`s takes
+  longer than `HostOptions.ShutdownTimeout` (a 5-second default) — nothing
+  in `Microsoft.Extensions.Hosting` catches it, so left unhandled it
+  crashes the whole process. `Program.cs`'s bare `host.Run()` had no
+  try/catch around it at all. A very plausible contributor to why 5
+  seconds wasn't enough: `WindowsUpdateChecker`'s `Task.Run(() => ...,
+  ct)` around `WuaUpdateSession`'s synchronous COM calls only cancels the
+  work item before it starts — once a real Windows Update search/
+  download/install is actually running, there is no way for this
+  codebase to abort it mid-call, so a stop requested while one is in
+  flight can legitimately take much longer than any short timeout allows.
+  Fixed two ways: `HostOptions.ShutdownTimeout` raised to 30 seconds (a
+  mitigation for ordinary in-flight work like an HTTP retry — not a full
+  fix, since a real Windows Update install still can't be bounded by any
+  timeout this codebase controls), and `host.Run()` wrapped in a
+  try/catch for `OperationCanceledException` that logs a Warning directly
+  to the Windows Event Log (the app's own DI-backed logging is already
+  disposed by the time this exception reaches `Main` — `RunAsync`'s own
+  `finally` disposes the host before the exception propagates out of it)
+  and exits instead of crashing. Not unit-testable in this project's
+  Linux-based suite (`WindowsServiceLifetime`/`Program.Main` aren't
+  something `dotnet test` on `ubuntu-latest` can exercise at all) — treat
+  this as a well-reasoned fix for a real, evidenced crash, not a
+  live-reverified one; re-confirm on a real Windows host that a shutdown
+  timing out now logs a Warning and exits cleanly instead of crashing,
+  the next time this is easy to trigger on purpose (e.g. stop the service
+  while a real Windows Update install is in progress).
+
 ## [0.15.0] - 2026-09-09
 
 ### Added
