@@ -94,15 +94,17 @@ Ein Upgrade über einen bereits konfigurierten, bereits laufenden Agent startet 
 
 ### Konfigurationsreferenz
 
-| Einstellung | Windows (Registry, `HKLM\SOFTWARE\UpdateWatch2\Agent`) | Linux (`/etc/updatewatch2/agent.conf`, JSON) | Standard | Bedeutung |
-|---|---|---|---|---|
-| Serveradresse | `ServerAddress` | `ServerAddress` | — (erforderlich) | Hostname/IP des UpdateWatch2-Servers — **muss exakt** dessen eigener `UPDATEWATCH2_SERVER_HOSTNAME` entsprechen; dieser Agent prüft das SAN des Server-Zertifikats dagegen. |
-| Server-Port | `ServerPort` | `ServerPort` | `8796` | Der agent-seitige, gegenseitig TLS-authentifizierte Port des Servers. |
-| Update-Prüfintervall | `UpdateCheckIntervalMinutes` | `UpdateCheckIntervalMinutes` | `240` | Basisintervall zwischen Update-Prüfungen, in Minuten. |
-| Update-Prüf-Jitter | `UpdateCheckJitterSeconds` | `UpdateCheckJitterSeconds` | `300` | Zufälliger Zuschlag (0..N Sekunden), damit nicht viele Agents gleichzeitig auf den Server treffen. |
-| Heartbeat-Intervall | `AliveIntervalMinutes` | `AliveIntervalMinutes` | `5` | Wie oft dieser Agent eine Alive-Meldung sendet. |
-| Log-Level | `LogLevel` | `LogLevel` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
-| Vorlaufzeit Zertifikatserneuerung | `CertificateRenewalLeadTimeDays` | `CertificateRenewalLeadTimeDays` | `60` | Tage vor Ablauf seines Zertifikats, ab denen dieser Agent proaktiv ein neues anfordert. |
+Jeder Schlüssel unten wird wortgleich an beiden Stellen verwendet: als Registry-*Wertname* unter `HKLM\SOFTWARE\UpdateWatch2\Agent` unter Windows, und als JSON-*Feldname* in `/etc/updatewatch2/agent.conf` unter Linux.
+
+| Einstellung | Schlüssel | Standard | Bedeutung |
+|---|---|---|---|
+| Serveradresse | `ServerAddress` | — (erforderlich) | Hostname/IP des UpdateWatch2-Servers — **muss exakt** dessen eigener `UPDATEWATCH2_SERVER_HOSTNAME` entsprechen; dieser Agent prüft das SAN des Server-Zertifikats dagegen. |
+| Server-Port | `ServerPort` | `8796` | Der agent-seitige, gegenseitig TLS-authentifizierte Port des Servers. |
+| Update-Prüfintervall | `UpdateCheckIntervalMinutes` | `240` | Basisintervall zwischen Update-Prüfungen, in Minuten. |
+| Update-Prüf-Jitter | `UpdateCheckJitterSeconds` | `300` | Zufälliger Zuschlag (0..N Sekunden), damit nicht viele Agents gleichzeitig auf den Server treffen. |
+| Heartbeat-Intervall | `AliveIntervalMinutes` | `5` | Wie oft dieser Agent eine Alive-Meldung sendet. |
+| Log-Level | `LogLevel` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
+| Vorlaufzeit Zertifikatserneuerung | `CertificateRenewalLeadTimeDays` | `60` | Tage vor Ablauf seines Zertifikats, ab denen dieser Agent proaktiv ein neues anfordert. |
 
 `RegistrationToken` und `ClientCertificateThumbprint` liegen ebenfalls hier, werden aber vom Agent selbst automatisch verwaltet — von Hand nur setzen, wenn ein Admin dir für eine Neuausstellung ein frisches Token gegeben hat (siehe die Admin-Oberfläche des Servers). Nach Änderung eines dieser Werte ist kein Dienst-Neustart nötig — der Agent übernimmt Konfigurationsänderungen von selbst im nächsten Wartungs-/Heartbeat-Takt.
 

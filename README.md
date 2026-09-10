@@ -94,15 +94,17 @@ An upgrade over an already-configured, already-running agent restarts the servic
 
 ### Configuration reference
 
-| Setting | Windows (registry, `HKLM\SOFTWARE\UpdateWatch2\Agent`) | Linux (`/etc/updatewatch2/agent.conf`, JSON) | Default | What it does |
-|---|---|---|---|---|
-| Server address | `ServerAddress` | `ServerAddress` | — (required) | Hostname/IP of the UpdateWatch2 server — **must match** its own `UPDATEWATCH2_SERVER_HOSTNAME` exactly; this agent validates the server's certificate SAN against it. |
-| Server port | `ServerPort` | `ServerPort` | `8796` | The server's agent-facing mutual-TLS port. |
-| Update-check interval | `UpdateCheckIntervalMinutes` | `UpdateCheckIntervalMinutes` | `240` | Base interval between OS-update checks, in minutes. |
-| Update-check jitter | `UpdateCheckJitterSeconds` | `UpdateCheckJitterSeconds` | `300` | Random jitter (0..N seconds) added on top, so many agents don't hit the server at once. |
-| Heartbeat interval | `AliveIntervalMinutes` | `AliveIntervalMinutes` | `5` | How often this agent sends an alive message. |
-| Log level | `LogLevel` | `LogLevel` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
-| Certificate renewal lead time | `CertificateRenewalLeadTimeDays` | `CertificateRenewalLeadTimeDays` | `60` | Days before its certificate's expiry that this agent proactively requests a fresh one. |
+Every key below is used verbatim in both places: as the registry *value name* under `HKLM\SOFTWARE\UpdateWatch2\Agent` on Windows, and as the JSON *field name* in `/etc/updatewatch2/agent.conf` on Linux.
+
+| Setting | Key | Default | What it does |
+|---|---|---|---|
+| Server address | `ServerAddress` | — (required) | Hostname/IP of the UpdateWatch2 server — **must match** its own `UPDATEWATCH2_SERVER_HOSTNAME` exactly; this agent validates the server's certificate SAN against it. |
+| Server port | `ServerPort` | `8796` | The server's agent-facing mutual-TLS port. |
+| Update-check interval | `UpdateCheckIntervalMinutes` | `240` | Base interval between OS-update checks, in minutes. |
+| Update-check jitter | `UpdateCheckJitterSeconds` | `300` | Random jitter (0..N seconds) added on top, so many agents don't hit the server at once. |
+| Heartbeat interval | `AliveIntervalMinutes` | `5` | How often this agent sends an alive message. |
+| Log level | `LogLevel` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
+| Certificate renewal lead time | `CertificateRenewalLeadTimeDays` | `60` | Days before its certificate's expiry that this agent proactively requests a fresh one. |
 
 `RegistrationToken` and `ClientCertificateThumbprint` are also stored here but are managed automatically by the agent itself — never set these by hand except when placing a fresh token an admin gave you for re-issuance (see the server's admin UI). No service restart is required after changing any of these; the agent picks config changes up on its own maintenance/heartbeat cadence.
 
