@@ -47,15 +47,30 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
         return new UpdateCheckResult(updates, RebootRequired: await IsRebootRequiredAsync(binary, ct));
     }
 
+    /// <summary>
+    /// Builds the <c>dnf</c>/<c>yum</c> argument list for a given
+    /// selection — see <c>AptUpdateSession.BuildInstallArgs</c>'s own doc
+    /// comment for why this is pulled out as its own testable pure
+    /// function and the argument-injection reasoning behind the <c>--</c>
+    /// marker; the same applies here verbatim (an RPM package name can't
+    /// start with <c>-</c> either, so nothing was actually relying on
+    /// that being enforced before this fix, and dnf's argparse-based
+    /// parser honors <c>--</c> the same standard way apt-get's does).
+    /// </summary>
+    public static string[] BuildInstallArgs(IReadOnlyList<string>? packageNames) =>
+        packageNames is null
+            // null: update everything pending, the original behavior.
+            ? ["-y", "update"]
+            // Non-null: dnf/yum both accept specific package names as
+            // trailing arguments to restrict the update to just those —
+            // an admin's way to install only some pending updates while
+            // sparing others.
+            : ["-y", "update", "--", .. packageNames];
+
     public async Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
     {
         var binary = ResolveBinary();
-        // null: update everything pending, the original behavior.
-        // Non-null: dnf/yum both accept specific package names as
-        // trailing arguments to restrict the update to just those — an
-        // admin's way to install only some pending updates while sparing
-        // others.
-        string[] args = packageNames is null ? ["-y", "update"] : ["-y", "update", .. packageNames];
+        var args = BuildInstallArgs(packageNames);
 
         var result = await ShellCommand.RunAsync(binary, args, ct);
         if (result.ExitCode != 0)

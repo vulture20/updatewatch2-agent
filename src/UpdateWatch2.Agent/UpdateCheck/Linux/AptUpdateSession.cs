@@ -55,18 +55,44 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
         return new UpdateCheckResult(updates, RebootRequired: File.Exists(RebootRequiredMarker));
     }
 
+    /// <summary>
+    /// Builds the <c>apt-get</c> argument list for a given selection —
+    /// pulled out as its own testable pure function (mirroring
+    /// <see cref="AptOutputParser"/>'s own public-static-method
+    /// convention) after an automated security review flagged the
+    /// original inline version as an argument-injection risk:
+    /// <paramref name="packageNames"/> ultimately traces back to
+    /// <c>Db.Entities.UpdateItem.PackageId</c> as parsed from this
+    /// agent's own <c>apt list --upgradable</c> output — not normally
+    /// attacker-controlled, but a real Debian package name can't start
+    /// with <c>-</c> by policy, so nothing here was actually relying on
+    /// that being enforced anywhere. Without a <c>--</c> end-of-options
+    /// marker, a value that *did* start with <c>-</c> (a malicious/
+    /// compromised third-party repo entry, say) would be parsed by
+    /// <c>apt-get</c> as an additional flag rather than a package name —
+    /// classic option-smuggling argument injection, not shell injection
+    /// (this project never goes through a shell — see <see cref="ShellCommand"/> —
+    /// so metacharacters like <c>;</c>/<c>|</c> were never the risk here).
+    /// The <c>--</c> marker is the standard, complete fix: everything
+    /// after it is always treated as a positional package name by
+    /// <c>apt-get</c>'s GNU-style argument parser, regardless of what it
+    /// starts with.
+    /// </summary>
+    public static string[] BuildInstallArgs(IReadOnlyList<string>? packageNames) =>
+        packageNames is null
+            // null: upgrade everything pending, the original behavior.
+            ? ["-y", "-o", "Dpkg::Options::=--force-confold", "dist-upgrade"]
+            // Non-null: an admin selected only some packages to install —
+            // "install --only-upgrade" restricts itself to packages that
+            // already have a newer version available, the same semantics
+            // dist-upgrade already has, just scoped to exactly these
+            // names rather than a plain "install" that could otherwise
+            // pull in something that isn't actually an upgrade.
+            : ["-y", "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", "--", .. packageNames];
+
     public async Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
     {
-        // null: upgrade everything pending, the original behavior.
-        // Non-null: an admin selected only some packages to install —
-        // "install --only-upgrade" restricts itself to packages that
-        // already have a newer version available, the same semantics
-        // dist-upgrade already has, just scoped to exactly these names
-        // rather than a plain "install" that could otherwise pull in
-        // something that isn't actually an upgrade.
-        string[] args = packageNames is null
-            ? ["-y", "-o", "Dpkg::Options::=--force-confold", "dist-upgrade"]
-            : ["-y", "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", .. packageNames];
+        var args = BuildInstallArgs(packageNames);
 
         var result = await ShellCommand.RunAsync(
             "apt-get",

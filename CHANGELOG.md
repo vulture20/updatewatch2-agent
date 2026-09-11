@@ -10,6 +10,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.15.3] - 2026-09-11
+
+### Fixed
+
+- **Argument-injection risk in the new selective-install command building (0.15.2), found by an automated security review of the pushed commit, not by testing.** `AptUpdateSession`/`DnfUpdateSession.DownloadAndInstallAsync` spliced the requested `packageNames` directly onto the `apt-get`/`dnf` argument list with no `--` end-of-options marker — a value starting with `-` would be parsed by the package manager as an additional flag rather than a positional package name (option smuggling), not the classic shell-metacharacter injection this project never has to worry about in the first place (`ShellCommand` passes each argument straight through `ProcessStartInfo.ArgumentList`, never a shell). Neither Debian nor RPM package names may start with `-` by policy, so nothing was actually relying on that being enforced anywhere upstream — a real package name was never at risk in the normal flow, but nothing prevented a crafted value either. Fixed by inserting a `--` marker before the package-name list in both classes (`apt-get`'s and `dnf`'s GNU-style argument parsers both treat everything after `--` as strictly positional, regardless of what it starts with) — the standard, complete fix for this class of issue. The argument-building logic was pulled out into a new testable `BuildInstallArgs` static method on each class (mirroring `AptOutputParser`/`DnfOutputParser`'s own public-static-method convention) specifically so this could get real unit test coverage, including a test asserting the `--` marker is actually present — the shelling-out half itself remains untested, same as the rest of these two classes.
+
 ## [0.15.2] - 2026-09-11
 
 ### Added
