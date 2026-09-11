@@ -97,12 +97,17 @@ public record AgentUpdateOffer(
 /// own client certificate was issued under a CA root a rotation has since
 /// superseded (updatewatch2-server#6 follow-up), alongside the existing
 /// certificate-rejection signal. <see cref="InstallRequested"/>,
-/// <see cref="AgentUpdateAvailable"/>, and <see cref="CertificateRotationPending"/>
-/// are only ever meaningful when <see cref="Outcome"/> is
-/// <see cref="AliveOutcome.Success"/> — a rejected or otherwise-failed call
-/// has no trustworthy body to read them from.
+/// <see cref="InstallUpdateIds"/>, <see cref="AgentUpdateAvailable"/>, and
+/// <see cref="CertificateRotationPending"/> are only ever meaningful when
+/// <see cref="Outcome"/> is <see cref="AliveOutcome.Success"/> — a rejected
+/// or otherwise-failed call has no trustworthy body to read them from.
 /// </summary>
-public record AliveResult(AliveOutcome Outcome, bool InstallRequested, AgentUpdateOffer? AgentUpdateAvailable = null, bool CertificateRotationPending = false)
+public record AliveResult(
+    AliveOutcome Outcome,
+    bool InstallRequested,
+    IReadOnlyList<string>? InstallUpdateIds = null,
+    AgentUpdateOffer? AgentUpdateAvailable = null,
+    bool CertificateRotationPending = false)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }

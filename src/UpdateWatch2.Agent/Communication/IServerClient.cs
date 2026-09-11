@@ -38,7 +38,9 @@ public interface IServerClient
     /// without treating an unrelated server error the same way.
     /// <see cref="AliveResult.InstallRequested"/> carries whether the
     /// server has a remote install pending for this agent
-    /// (updatewatch2-server#10/updatewatch2-agent#4).
+    /// (updatewatch2-server#10/updatewatch2-agent#4), and
+    /// <see cref="AliveResult.InstallUpdateIds"/> which specific updates
+    /// to install, if an admin selected only some rather than everything.
     /// <see cref="AliveResult.AgentUpdateAvailable"/> carries a newer agent
     /// release to self-update to, if one is known and enabled server-side
     /// (updatewatch2-server#14/updatewatch2-agent#14).

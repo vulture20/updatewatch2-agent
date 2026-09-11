@@ -55,17 +55,28 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
         return new UpdateCheckResult(updates, RebootRequired: File.Exists(RebootRequiredMarker));
     }
 
-    public async Task<InstallOutcome> DownloadAndInstallAsync(CancellationToken ct)
+    public async Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
     {
+        // null: upgrade everything pending, the original behavior.
+        // Non-null: an admin selected only some packages to install —
+        // "install --only-upgrade" restricts itself to packages that
+        // already have a newer version available, the same semantics
+        // dist-upgrade already has, just scoped to exactly these names
+        // rather than a plain "install" that could otherwise pull in
+        // something that isn't actually an upgrade.
+        string[] args = packageNames is null
+            ? ["-y", "-o", "Dpkg::Options::=--force-confold", "dist-upgrade"]
+            : ["-y", "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", .. packageNames];
+
         var result = await ShellCommand.RunAsync(
             "apt-get",
-            ["-y", "-o", "Dpkg::Options::=--force-confold", "dist-upgrade"],
+            args,
             ct,
             extraEnvironment: new Dictionary<string, string> { ["DEBIAN_FRONTEND"] = "noninteractive" });
 
         if (result.ExitCode != 0)
         {
-            logger.LogWarning("apt-get dist-upgrade exited with code {ExitCode}: {StdErr}", result.ExitCode, result.StandardError.Trim());
+            logger.LogWarning("apt-get {Args} exited with code {ExitCode}: {StdErr}", string.Join(' ', args), result.ExitCode, result.StandardError.Trim());
             return InstallOutcome.Failed;
         }
 

@@ -57,24 +57,48 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         return new UpdateCheckResult(updates, RebootRequired: IsRebootRequired());
     }
 
-    public InstallOutcome DownloadAndInstall(CancellationToken ct)
+    public InstallOutcome DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct)
     {
         dynamic session = CreateSession();
         dynamic searcher = session.CreateUpdateSearcher();
         ct.ThrowIfCancellationRequested();
         dynamic pending = searcher.Search(SearchCriteria).Updates;
 
+        // packageIds null: the original "install everything pending"
+        // behavior. Non-null: an admin selected only some updates to
+        // install (installing only some while sparing others) — an
+        // update with no KB article at all (FirstKbArticleId returns
+        // null; rare, but possible) can't be individually named on the
+        // wire either way, so it's always included rather than becoming
+        // permanently un-installable through this path the moment any
+        // selection is made.
+        var selected = new List<dynamic>();
         int pendingCount = pending.Count;
-        if (pendingCount == 0)
+        for (var i = 0; i < pendingCount; i++)
         {
-            logger.LogInformation("No pending Windows updates to install.");
+            dynamic update = pending.Item(i);
+            // Cast explicitly — a call with a dynamic argument is itself
+            // dynamically bound, which would otherwise make `kb`'s static
+            // type dynamic too (even though FirstKbArticleId's own
+            // declared return type is string?), and packageIds.Contains
+            // (a LINQ extension method) can't be invoked with a dynamic
+            // argument.
+            var kb = (string?)FirstKbArticleId(update);
+            if (packageIds is null || kb is null || packageIds.Contains(kb))
+            {
+                selected.Add(update);
+            }
+        }
+
+        if (selected.Count == 0)
+        {
+            logger.LogInformation("No pending Windows updates match what was requested to install.");
             return InstallOutcome.Succeeded;
         }
 
         dynamic toDownload = NewUpdateCollection();
-        for (var i = 0; i < pendingCount; i++)
+        foreach (dynamic update in selected)
         {
-            dynamic update = pending.Item(i);
             if (!(bool)update.EulaAccepted)
             {
                 update.AcceptEula();
@@ -89,18 +113,18 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         dynamic downloadResult = downloader.Download();
 
         dynamic toInstall = NewUpdateCollection();
-        for (var i = 0; i < pendingCount; i++)
+        for (var i = 0; i < selected.Count; i++)
         {
             if (IsSuccessCode((int)downloadResult.GetUpdateResult(i).ResultCode))
             {
-                toInstall.Add(pending.Item(i));
+                toInstall.Add(selected[i]);
             }
         }
 
         int downloadedCount = toInstall.Count;
         if (downloadedCount == 0)
         {
-            logger.LogWarning("Windows Update download produced no successfully downloaded updates out of {PendingCount} pending.", pendingCount);
+            logger.LogWarning("Windows Update download produced no successfully downloaded updates out of {SelectedCount} selected.", selected.Count);
             return InstallOutcome.Failed;
         }
 

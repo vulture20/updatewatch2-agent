@@ -15,5 +15,13 @@ public interface ILinuxUpdateSession
 {
     Task<UpdateCheckResult> SearchForUpdatesAsync(CancellationToken ct);
 
-    Task<InstallOutcome> DownloadAndInstallAsync(CancellationToken ct);
+    /// <summary>
+    /// Installs whatever is currently pending — or, when
+    /// <paramref name="packageNames"/> is non-null, only those named
+    /// packages (an admin's way to install only some updates while
+    /// sparing others; every Linux update this codebase reports always
+    /// has a non-null <c>PackageId</c>, unlike the rare Windows case, so
+    /// there's no "can't be individually named" fallback needed here).
+    /// </summary>
+    Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct);
 }

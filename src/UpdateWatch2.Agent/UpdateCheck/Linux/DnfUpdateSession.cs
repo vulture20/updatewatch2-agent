@@ -47,13 +47,20 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
         return new UpdateCheckResult(updates, RebootRequired: await IsRebootRequiredAsync(binary, ct));
     }
 
-    public async Task<InstallOutcome> DownloadAndInstallAsync(CancellationToken ct)
+    public async Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
     {
         var binary = ResolveBinary();
-        var result = await ShellCommand.RunAsync(binary, ["-y", "update"], ct);
+        // null: update everything pending, the original behavior.
+        // Non-null: dnf/yum both accept specific package names as
+        // trailing arguments to restrict the update to just those — an
+        // admin's way to install only some pending updates while sparing
+        // others.
+        string[] args = packageNames is null ? ["-y", "update"] : ["-y", "update", .. packageNames];
+
+        var result = await ShellCommand.RunAsync(binary, args, ct);
         if (result.ExitCode != 0)
         {
-            logger.LogWarning("{Binary} update exited with code {ExitCode}: {StdErr}", binary, result.ExitCode, result.StandardError.Trim());
+            logger.LogWarning("{Binary} {Args} exited with code {ExitCode}: {StdErr}", binary, string.Join(' ', args), result.ExitCode, result.StandardError.Trim());
             return InstallOutcome.Failed;
         }
 

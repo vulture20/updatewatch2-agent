@@ -29,11 +29,11 @@ public class LinuxUpdateChecker(ILinuxUpdateSession session, ILogger<LinuxUpdate
         }
     }
 
-    public async Task<InstallOutcome> InstallAsync(CancellationToken ct = default)
+    public async Task<InstallOutcome> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default)
     {
         try
         {
-            return await session.DownloadAndInstallAsync(ct);
+            return await session.DownloadAndInstallAsync(packageIds, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

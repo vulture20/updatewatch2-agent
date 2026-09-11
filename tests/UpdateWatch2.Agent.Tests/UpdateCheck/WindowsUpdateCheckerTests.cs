@@ -43,7 +43,7 @@ public class WindowsUpdateCheckerTests
     {
         var checker = new WindowsUpdateChecker(new FakeSession(installOutcome: InstallOutcome.Succeeded), NullLogger<WindowsUpdateChecker>.Instance);
 
-        var actual = await checker.InstallAsync();
+        var actual = await checker.InstallAsync(packageIds: null);
 
         Assert.Equal(InstallOutcome.Succeeded, actual);
     }
@@ -52,24 +52,40 @@ public class WindowsUpdateCheckerTests
     public async Task InstallAsync_reports_failure_when_the_session_throws()
     {
         var checker = new WindowsUpdateChecker(
-            new FakeSession(onInstall: () => throw new InvalidOperationException("simulated WUApiLib failure")),
+            new FakeSession(onInstall: _ => throw new InvalidOperationException("simulated WUApiLib failure")),
             NullLogger<WindowsUpdateChecker>.Instance);
 
-        var actual = await checker.InstallAsync();
+        var actual = await checker.InstallAsync(packageIds: null);
 
         Assert.Equal(InstallOutcome.Failed, actual);
+    }
+
+    [Fact]
+    public async Task InstallAsync_passes_the_requested_package_ids_through_to_the_session()
+    {
+        IReadOnlyList<string>? received = null;
+        var session = new FakeSession(onInstall: ids =>
+        {
+            received = ids;
+            return InstallOutcome.Succeeded;
+        });
+        var checker = new WindowsUpdateChecker(session, NullLogger<WindowsUpdateChecker>.Instance);
+
+        await checker.InstallAsync(["KB1", "KB2"]);
+
+        Assert.Equal(["KB1", "KB2"], received);
     }
 
     private class FakeSession(
         UpdateCheckResult? searchResult = null,
         InstallOutcome installOutcome = InstallOutcome.Succeeded,
         Func<UpdateCheckResult>? onSearch = null,
-        Func<InstallOutcome>? onInstall = null) : IWindowsUpdateSession
+        Func<IReadOnlyList<string>?, InstallOutcome>? onInstall = null) : IWindowsUpdateSession
     {
         public UpdateCheckResult SearchForUpdates(CancellationToken ct) =>
             onSearch is not null ? onSearch() : searchResult ?? new UpdateCheckResult([], RebootRequired: false);
 
-        public InstallOutcome DownloadAndInstall(CancellationToken ct) =>
-            onInstall is not null ? onInstall() : installOutcome;
+        public InstallOutcome DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct) =>
+            onInstall is not null ? onInstall(packageIds) : installOutcome;
     }
 }

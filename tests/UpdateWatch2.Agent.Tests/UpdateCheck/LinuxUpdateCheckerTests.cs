@@ -43,7 +43,7 @@ public class LinuxUpdateCheckerTests
     {
         var checker = new LinuxUpdateChecker(new FakeSession(installOutcome: InstallOutcome.Succeeded), NullLogger<LinuxUpdateChecker>.Instance);
 
-        var actual = await checker.InstallAsync();
+        var actual = await checker.InstallAsync(packageIds: null);
 
         Assert.Equal(InstallOutcome.Succeeded, actual);
     }
@@ -52,24 +52,40 @@ public class LinuxUpdateCheckerTests
     public async Task InstallAsync_reports_failure_when_the_session_throws()
     {
         var checker = new LinuxUpdateChecker(
-            new FakeSession(onInstall: () => throw new InvalidOperationException("simulated apt failure")),
+            new FakeSession(onInstall: _ => throw new InvalidOperationException("simulated apt failure")),
             NullLogger<LinuxUpdateChecker>.Instance);
 
-        var actual = await checker.InstallAsync();
+        var actual = await checker.InstallAsync(packageIds: null);
 
         Assert.Equal(InstallOutcome.Failed, actual);
+    }
+
+    [Fact]
+    public async Task InstallAsync_passes_the_requested_package_names_through_to_the_session()
+    {
+        IReadOnlyList<string>? received = null;
+        var session = new FakeSession(onInstall: names =>
+        {
+            received = names;
+            return InstallOutcome.Succeeded;
+        });
+        var checker = new LinuxUpdateChecker(session, NullLogger<LinuxUpdateChecker>.Instance);
+
+        await checker.InstallAsync(["bash"]);
+
+        Assert.Equal(["bash"], received);
     }
 
     private class FakeSession(
         UpdateCheckResult? searchResult = null,
         InstallOutcome installOutcome = InstallOutcome.Succeeded,
         Func<UpdateCheckResult>? onSearch = null,
-        Func<InstallOutcome>? onInstall = null) : ILinuxUpdateSession
+        Func<IReadOnlyList<string>?, InstallOutcome>? onInstall = null) : ILinuxUpdateSession
     {
         public Task<UpdateCheckResult> SearchForUpdatesAsync(CancellationToken ct) =>
             Task.FromResult(onSearch is not null ? onSearch() : searchResult ?? new UpdateCheckResult([], RebootRequired: false));
 
-        public Task<InstallOutcome> DownloadAndInstallAsync(CancellationToken ct) =>
-            Task.FromResult(onInstall is not null ? onInstall() : installOutcome);
+        public Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct) =>
+            Task.FromResult(onInstall is not null ? onInstall(packageNames) : installOutcome);
     }
 }

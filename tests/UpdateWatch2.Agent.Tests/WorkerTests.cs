@@ -456,6 +456,39 @@ public class WorkerTests
     }
 
     [Fact]
+    public async Task HeartbeatWorker_passes_the_servers_selected_update_ids_through_to_the_installer()
+    {
+        var cts = new CancellationTokenSource();
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false));
+
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onInstallRequested: _ => true,
+            onInstallUpdateIds: _ => ["KB1", "KB2"]);
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(["KB1", "KB2"], checker.LastInstallPackageIds);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_installs_everything_pending_when_the_server_sends_no_selection()
+    {
+        var cts = new CancellationTokenSource();
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false));
+
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onInstallRequested: _ => true);
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Null(checker.LastInstallPackageIds);
+    }
+
+    [Fact]
     public async Task HeartbeatWorker_refreshes_the_update_list_immediately_after_a_successful_install()
     {
         var cts = new CancellationTokenSource();
@@ -701,11 +734,14 @@ public class WorkerTests
     {
         public int InstallCallCount { get; private set; }
 
+        public IReadOnlyList<string>? LastInstallPackageIds { get; private set; }
+
         public Task<UpdateCheckResult> CheckAsync(CancellationToken ct = default) => Task.FromResult(result);
 
-        public Task<CheckerInstallOutcome> InstallAsync(CancellationToken ct = default)
+        public Task<CheckerInstallOutcome> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default)
         {
             InstallCallCount++;
+            LastInstallPackageIds = packageIds;
             return onInstall is null ? Task.FromResult(CheckerInstallOutcome.Succeeded) : Task.FromResult(onInstall());
         }
     }
@@ -734,7 +770,8 @@ public class WorkerTests
         Func<byte[]>? onFetchCaCertificateBundle = null,
         Func<int, AgentUpdateOffer?>? onAgentUpdateAvailable = null,
         Func<string, string, Task>? onDownloadFile = null,
-        Func<int, bool>? onCertificateRotationPending = null) : IServerClient
+        Func<int, bool>? onCertificateRotationPending = null,
+        Func<int, IReadOnlyList<string>?>? onInstallUpdateIds = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
@@ -758,9 +795,10 @@ public class WorkerTests
             onSendAlive?.Invoke();
             var outcome = onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success;
             var installRequested = outcome == AliveOutcome.Success && (onInstallRequested?.Invoke(SendAliveCallCount) ?? false);
+            var installUpdateIds = outcome == AliveOutcome.Success ? onInstallUpdateIds?.Invoke(SendAliveCallCount) : null;
             var agentUpdateAvailable = outcome == AliveOutcome.Success ? onAgentUpdateAvailable?.Invoke(SendAliveCallCount) : null;
             var certificateRotationPending = outcome == AliveOutcome.Success && (onCertificateRotationPending?.Invoke(SendAliveCallCount) ?? false);
-            return Task.FromResult(new AliveResult(outcome, installRequested, agentUpdateAvailable, certificateRotationPending));
+            return Task.FromResult(new AliveResult(outcome, installRequested, installUpdateIds, agentUpdateAvailable, certificateRotationPending));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)

@@ -20,9 +20,14 @@ public interface IWindowsUpdateSession
     UpdateCheckResult SearchForUpdates(CancellationToken ct);
 
     /// <summary>
-    /// Searches, downloads, and installs whatever is currently applicable.
+    /// Searches, downloads, and installs whatever is currently applicable
+    /// — or, when <paramref name="packageIds"/> is non-null, only the
+    /// pending updates whose KB-article-derived <c>PackageId</c> is in it
+    /// (an admin's way to install only some updates while sparing others).
     /// Must never trigger a reboot itself, even if installation leaves one
-    /// pending — see <see cref="WuaUpdateSession"/> for how that's honored.
+    /// pending — see <see cref="WuaUpdateSession"/> for how that's honored,
+    /// and for how an update with no KB article at all (so it can't be
+    /// individually named on the wire) is handled when a selection is given.
     /// </summary>
-    InstallOutcome DownloadAndInstall(CancellationToken ct);
+    InstallOutcome DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct);
 }

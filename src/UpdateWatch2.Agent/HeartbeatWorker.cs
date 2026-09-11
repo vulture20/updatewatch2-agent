@@ -173,7 +173,7 @@ public class HeartbeatWorker(
             {
                 if (result.InstallRequested)
                 {
-                    await HandleInstallRequestAsync(ct);
+                    await HandleInstallRequestAsync(result.InstallUpdateIds, ct);
                 }
 
                 if (result.AgentUpdateAvailable is not null)
@@ -213,14 +213,21 @@ public class HeartbeatWorker(
     /// long as the install takes — not done here since nothing in this
     /// codebase can actually take that long yet.
     /// </summary>
-    private async Task HandleInstallRequestAsync(CancellationToken ct)
+    private async Task HandleInstallRequestAsync(IReadOnlyList<string>? updateIds, CancellationToken ct)
     {
-        logger.LogInformation("Server requested an install — invoking the update installer.");
+        if (updateIds is null)
+        {
+            logger.LogInformation("Server requested an install of everything pending — invoking the update installer.");
+        }
+        else
+        {
+            logger.LogInformation("Server requested an install of {Count} selected update(s) — invoking the update installer.", updateIds.Count);
+        }
 
         WireInstallOutcome outcome;
         try
         {
-            var checkerOutcome = await updateChecker.InstallAsync(ct);
+            var checkerOutcome = await updateChecker.InstallAsync(updateIds, ct);
             outcome = checkerOutcome == CheckerInstallOutcome.Succeeded ? WireInstallOutcome.Succeeded : WireInstallOutcome.Failed;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

@@ -32,12 +32,12 @@ public class WindowsUpdateChecker(IWindowsUpdateSession session, ILogger<Windows
             }
         }, ct);
 
-    public Task<InstallOutcome> InstallAsync(CancellationToken ct = default) =>
+    public Task<InstallOutcome> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default) =>
         Task.Run(() =>
         {
             try
             {
-                return session.DownloadAndInstall(ct);
+                return session.DownloadAndInstall(packageIds, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
