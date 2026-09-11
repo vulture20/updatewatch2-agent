@@ -134,5 +134,17 @@ public enum InstallOutcome
     Failed,
 }
 
-/// <summary>Body of <c>POST .../install-ack</c> — this agent's acknowledgement that it acted on a pending install request.</summary>
-public record InstallAckRequest(InstallOutcome Outcome);
+/// <summary>
+/// Body of <c>POST .../install-ack</c> — this agent's acknowledgement that
+/// it acted on a pending install request. <see cref="ErrorDetail"/> is new
+/// (protocol 0.10.0) and only ever meaningful when <see cref="Outcome"/>
+/// is <see cref="InstallOutcome.Failed"/> — a human-readable reason (the
+/// OS-level tool's own stderr/exit code, or a caught exception's message)
+/// so an admin can see WHY an install failed straight from the admin UI
+/// instead of having to raise this agent's log level and tail journalctl
+/// live, which is what a real production incident on a genuinely
+/// unrelated apt-repository-trust problem took before this existed.
+/// Additive and nullable, matching every prior wire-shape change in this
+/// codebase — an older server build simply ignores the extra field.
+/// </summary>
+public record InstallAckRequest(InstallOutcome Outcome, string? ErrorDetail = null);

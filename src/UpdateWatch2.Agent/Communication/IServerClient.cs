@@ -55,9 +55,12 @@ public interface IServerClient
     /// <see cref="AliveResult.InstallRequested"/>. If this call itself
     /// fails, the server simply keeps reporting the install as pending on
     /// the next heartbeat — no special retry handling needed here, the
-    /// existing poll cadence already is the retry.
+    /// existing poll cadence already is the retry. <paramref name="errorDetail"/>
+    /// is only ever meaningful alongside <see cref="InstallOutcome.Failed"/> —
+    /// see <see cref="InstallAckRequest.ErrorDetail"/>'s own doc comment
+    /// for why this exists.
     /// </summary>
-    Task AcknowledgeInstallAsync(InstallOutcome outcome, CancellationToken ct = default);
+    Task AcknowledgeInstallAsync(InstallOutcome outcome, string? errorDetail, CancellationToken ct = default);
 
     /// <summary>Fetches the server's four version numbers. Anonymous; no cert needed — used for protocol-compatibility detection (updatewatch2-server#3).</summary>
     Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default);

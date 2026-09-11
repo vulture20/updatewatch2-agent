@@ -57,7 +57,7 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         return new UpdateCheckResult(updates, RebootRequired: IsRebootRequired());
     }
 
-    public InstallOutcome DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct)
+    public InstallResult DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct)
     {
         dynamic session = CreateSession();
         dynamic searcher = session.CreateUpdateSearcher();
@@ -93,7 +93,7 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         if (selected.Count == 0)
         {
             logger.LogInformation("No pending Windows updates match what was requested to install.");
-            return InstallOutcome.Succeeded;
+            return new InstallResult(InstallOutcome.Succeeded);
         }
 
         dynamic toDownload = NewUpdateCollection();
@@ -125,7 +125,7 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         if (downloadedCount == 0)
         {
             logger.LogWarning("Windows Update download produced no successfully downloaded updates out of {SelectedCount} selected.", selected.Count);
-            return InstallOutcome.Failed;
+            return new InstallResult(InstallOutcome.Failed, $"Download produced no successfully downloaded updates out of {selected.Count} selected.");
         }
 
         ct.ThrowIfCancellationRequested();
@@ -144,11 +144,11 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         if (!IsSuccessCode(installCode))
         {
             logger.LogWarning("Windows Update install finished with result code {ResultCode} for {Count} update(s).", installCode, downloadedCount);
-            return InstallOutcome.Failed;
+            return new InstallResult(InstallOutcome.Failed, $"Install finished with result code {installCode} for {downloadedCount} update(s).");
         }
 
         logger.LogInformation("Windows Update install succeeded for {Count} update(s) (result code {ResultCode}).", downloadedCount, installCode);
-        return InstallOutcome.Succeeded;
+        return new InstallResult(InstallOutcome.Succeeded);
     }
 
     // OperationResultCode (WUApiLib): 0 orcNotStarted, 1 orcInProgress,

@@ -12,9 +12,9 @@ public class NoOpUpdateChecker(ILogger<NoOpUpdateChecker> logger) : IUpdateCheck
         return Task.FromResult(new UpdateCheckResult(Updates: [], RebootRequired: false));
     }
 
-    public Task<InstallOutcome> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default)
+    public Task<InstallResult> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default)
     {
         logger.LogWarning("No update installer is implemented for this platform yet ({Os}).", Environment.OSVersion.Platform);
-        return Task.FromResult(InstallOutcome.Succeeded);
+        return Task.FromResult(new InstallResult(InstallOutcome.Succeeded));
     }
 }

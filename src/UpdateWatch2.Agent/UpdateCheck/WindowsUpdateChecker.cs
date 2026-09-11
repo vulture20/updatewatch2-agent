@@ -32,7 +32,7 @@ public class WindowsUpdateChecker(IWindowsUpdateSession session, ILogger<Windows
             }
         }, ct);
 
-    public Task<InstallOutcome> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default) =>
+    public Task<InstallResult> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default) =>
         Task.Run(() =>
         {
             try
@@ -42,7 +42,7 @@ public class WindowsUpdateChecker(IWindowsUpdateSession session, ILogger<Windows
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogError(ex, "Windows Update install failed");
-                return InstallOutcome.Failed;
+                return new InstallResult(InstallOutcome.Failed, ex.Message);
             }
         }, ct);
 }

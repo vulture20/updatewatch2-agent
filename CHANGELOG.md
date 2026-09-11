@@ -10,6 +10,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.15.5] - 2026-09-11
+
+### Added
+
+- **A failed install now carries a human-readable reason back to the admin UI, at the user's explicit request after a real production incident took a raised log level and live journalctl tailing just to see one line — protocol `0.10.0`.** `IUpdateChecker.InstallAsync` now returns a new `InstallResult(InstallOutcome, string? ErrorDetail)` instead of the bare enum — `AptUpdateSession`/`DnfUpdateSession` fill it from the package manager's own stderr/exit code, `WuaUpdateSession` from its result code, and a caught exception anywhere in the chain from its own message. `HeartbeatWorker.HandleInstallRequestAsync` forwards it (capped at 2000 chars agent-side, so one bad install attempt can't send an unbounded blob) as a new optional `ErrorDetail` field on `POST .../install-ack`'s body — additive and nullable, an older server build simply ignores it. New test coverage in `WindowsUpdateCheckerTests`/`LinuxUpdateCheckerTests` (the exception-message path) and `WorkerTests` (both the exception path and a checker returning `Failed` cleanly with its own detail, forwarded verbatim to the acknowledgement).
+
 ## [0.15.4] - 2026-09-11
 
 ### Changed

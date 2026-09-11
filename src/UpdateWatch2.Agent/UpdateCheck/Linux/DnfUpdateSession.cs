@@ -67,7 +67,7 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
             // sparing others.
             : ["-y", "update", "--", .. packageNames];
 
-    public async Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
+    public async Task<InstallResult> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
     {
         var binary = ResolveBinary();
         var args = BuildInstallArgs(packageNames);
@@ -75,11 +75,12 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
         var result = await ShellCommand.RunAsync(binary, args, ct);
         if (result.ExitCode != 0)
         {
-            logger.LogWarning("{Binary} {Args} exited with code {ExitCode}: {StdErr}", binary, string.Join(' ', args), result.ExitCode, result.StandardError.Trim());
-            return InstallOutcome.Failed;
+            var stdErr = result.StandardError.Trim();
+            logger.LogWarning("{Binary} {Args} exited with code {ExitCode}: {StdErr}", binary, string.Join(' ', args), result.ExitCode, stdErr);
+            return new InstallResult(InstallOutcome.Failed, $"{binary} exited with code {result.ExitCode}: {stdErr}");
         }
 
-        return InstallOutcome.Succeeded;
+        return new InstallResult(InstallOutcome.Succeeded);
     }
 
     // dnf's needs-restarting plugin ships as its own not-always-installed

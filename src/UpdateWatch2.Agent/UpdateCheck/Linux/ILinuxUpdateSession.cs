@@ -23,5 +23,5 @@ public interface ILinuxUpdateSession
     /// has a non-null <c>PackageId</c>, unlike the rare Windows case, so
     /// there's no "can't be individually named" fallback needed here).
     /// </summary>
-    Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct);
+    Task<InstallResult> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct);
 }

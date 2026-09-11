@@ -444,7 +444,7 @@ public class WorkerTests
         var client = new FakeServerClient(
             onSendAlive: () => cts.Cancel(),
             onInstallRequested: _ => true,
-            onAcknowledgeInstall: outcome => acknowledged = outcome);
+            onAcknowledgeInstall: (outcome, _) => acknowledged = outcome);
 
         var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
 
@@ -540,24 +540,50 @@ public class WorkerTests
     }
 
     [Fact]
-    public async Task HeartbeatWorker_acknowledges_failure_when_the_installer_throws()
+    public async Task HeartbeatWorker_acknowledges_failure_and_the_exception_message_when_the_installer_throws()
     {
         var cts = new CancellationTokenSource();
         var checker = new FakeUpdateChecker(
             new UpdateCheckResult([], RebootRequired: false),
             onInstall: () => throw new InvalidOperationException("simulated install failure"));
         WireInstallOutcome? acknowledged = null;
+        string? acknowledgedDetail = null;
 
         var client = new FakeServerClient(
             onSendAlive: () => cts.Cancel(),
             onInstallRequested: _ => true,
-            onAcknowledgeInstall: outcome => acknowledged = outcome);
+            onAcknowledgeInstall: (outcome, detail) => (acknowledged, acknowledgedDetail) = (outcome, detail));
 
         var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
         Assert.Equal(WireInstallOutcome.Failed, acknowledged);
+        Assert.Equal("simulated install failure", acknowledgedDetail);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_forwards_the_checkers_own_error_detail_to_the_acknowledgement()
+    {
+        // Distinct from the exception-message case above — this is the
+        // "the checker returned Failed with a reason cleanly, nothing
+        // threw" path (e.g. AptUpdateSession reporting apt-get's own
+        // stderr), which HandleInstallRequestAsync must forward just as
+        // faithfully.
+        var cts = new CancellationTokenSource();
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false), onInstall: () => CheckerInstallOutcome.Failed);
+        string? acknowledgedDetail = null;
+
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onInstallRequested: _ => true,
+            onAcknowledgeInstall: (_, detail) => acknowledgedDetail = detail);
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal("simulated failure detail", acknowledgedDetail);
     }
 
     [Fact]
@@ -738,11 +764,12 @@ public class WorkerTests
 
         public Task<UpdateCheckResult> CheckAsync(CancellationToken ct = default) => Task.FromResult(result);
 
-        public Task<CheckerInstallOutcome> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default)
+        public Task<InstallResult> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default)
         {
             InstallCallCount++;
             LastInstallPackageIds = packageIds;
-            return onInstall is null ? Task.FromResult(CheckerInstallOutcome.Succeeded) : Task.FromResult(onInstall());
+            var outcome = onInstall is null ? CheckerInstallOutcome.Succeeded : onInstall();
+            return Task.FromResult(new InstallResult(outcome, outcome == CheckerInstallOutcome.Failed ? "simulated failure detail" : null));
         }
     }
 
@@ -766,7 +793,7 @@ public class WorkerTests
         Func<RenewCertificateResult>? onRenewCertificate = null,
         Func<int, AliveOutcome>? onSendAliveOutcome = null,
         Func<int, bool>? onInstallRequested = null,
-        Action<WireInstallOutcome>? onAcknowledgeInstall = null,
+        Action<WireInstallOutcome, string?>? onAcknowledgeInstall = null,
         Func<byte[]>? onFetchCaCertificateBundle = null,
         Func<int, AgentUpdateOffer?>? onAgentUpdateAvailable = null,
         Func<string, string, Task>? onDownloadFile = null,
@@ -816,10 +843,10 @@ public class WorkerTests
             return Task.FromResult(onRenewCertificate?.Invoke() ?? new RenewCertificateResult(false, null));
         }
 
-        public Task AcknowledgeInstallAsync(WireInstallOutcome outcome, CancellationToken ct = default)
+        public Task AcknowledgeInstallAsync(WireInstallOutcome outcome, string? errorDetail, CancellationToken ct = default)
         {
             AcknowledgeInstallCallCount++;
-            onAcknowledgeInstall?.Invoke(outcome);
+            onAcknowledgeInstall?.Invoke(outcome, errorDetail);
             return Task.CompletedTask;
         }
 

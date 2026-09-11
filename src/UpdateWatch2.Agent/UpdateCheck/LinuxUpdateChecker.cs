@@ -29,7 +29,7 @@ public class LinuxUpdateChecker(ILinuxUpdateSession session, ILogger<LinuxUpdate
         }
     }
 
-    public async Task<InstallOutcome> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default)
+    public async Task<InstallResult> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default)
     {
         try
         {
@@ -38,7 +38,7 @@ public class LinuxUpdateChecker(ILinuxUpdateSession session, ILogger<LinuxUpdate
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Linux update install failed");
-            return InstallOutcome.Failed;
+            return new InstallResult(InstallOutcome.Failed, ex.Message);
         }
     }
 }

@@ -29,5 +29,5 @@ public interface IWindowsUpdateSession
     /// and for how an update with no KB article at all (so it can't be
     /// individually named on the wire) is handled when a selection is given.
     /// </summary>
-    InstallOutcome DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct);
+    InstallResult DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct);
 }

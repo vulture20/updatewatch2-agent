@@ -225,10 +225,12 @@ public class HeartbeatWorker(
         }
 
         WireInstallOutcome outcome;
+        string? errorDetail = null;
         try
         {
-            var checkerOutcome = await updateChecker.InstallAsync(updateIds, ct);
-            outcome = checkerOutcome == CheckerInstallOutcome.Succeeded ? WireInstallOutcome.Succeeded : WireInstallOutcome.Failed;
+            var result = await updateChecker.InstallAsync(updateIds, ct);
+            outcome = result.Outcome == CheckerInstallOutcome.Succeeded ? WireInstallOutcome.Succeeded : WireInstallOutcome.Failed;
+            errorDetail = result.ErrorDetail;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -238,6 +240,7 @@ public class HeartbeatWorker(
         {
             logger.LogError(ex, "Install failed");
             outcome = WireInstallOutcome.Failed;
+            errorDetail = ex.Message;
         }
 
         if (outcome == WireInstallOutcome.Succeeded)
@@ -264,7 +267,7 @@ public class HeartbeatWorker(
 
         try
         {
-            await serverClient.AcknowledgeInstallAsync(outcome, ct);
+            await serverClient.AcknowledgeInstallAsync(outcome, Truncate(errorDetail), ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -280,6 +283,20 @@ public class HeartbeatWorker(
             logger.LogWarning(ex, "Failed to acknowledge the install outcome to the server — it will keep reporting the install as pending.");
         }
     }
+
+    // A raw apt-get/dnf stderr blob or a chained exception message could in
+    // principle be enormous (a very verbose package manager failure, or a
+    // long inner-exception chain) — capped before it ever leaves this agent
+    // so neither the wire payload nor the server's stored column grows
+    // unboundedly from a single bad install attempt. Comfortably longer
+    // than any realistic single-line apt-get/dnf error, which is the only
+    // thing this has actually been observed to carry in production.
+    private const int MaxErrorDetailLength = 2000;
+
+    private static string? Truncate(string? detail) =>
+        detail is null || detail.Length <= MaxErrorDetailLength
+            ? detail
+            : detail[..MaxErrorDetailLength] + "…";
 
     /// <summary>
     /// Invoked inline on the heartbeat's own tick, same as

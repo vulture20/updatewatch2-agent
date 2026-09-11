@@ -90,7 +90,7 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
             // pull in something that isn't actually an upgrade.
             : ["-y", "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", "--", .. packageNames];
 
-    public async Task<InstallOutcome> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
+    public async Task<InstallResult> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
     {
         var args = BuildInstallArgs(packageNames);
 
@@ -102,10 +102,11 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
 
         if (result.ExitCode != 0)
         {
-            logger.LogWarning("apt-get {Args} exited with code {ExitCode}: {StdErr}", string.Join(' ', args), result.ExitCode, result.StandardError.Trim());
-            return InstallOutcome.Failed;
+            var stdErr = result.StandardError.Trim();
+            logger.LogWarning("apt-get {Args} exited with code {ExitCode}: {StdErr}", string.Join(' ', args), result.ExitCode, stdErr);
+            return new InstallResult(InstallOutcome.Failed, $"apt-get exited with code {result.ExitCode}: {stdErr}");
         }
 
-        return InstallOutcome.Succeeded;
+        return new InstallResult(InstallOutcome.Succeeded);
     }
 }

@@ -28,5 +28,5 @@ public interface IUpdateChecker
     /// normal <see cref="CheckAsync"/>/report-updates cycle, unrelated to
     /// this call's own outcome.
     /// </summary>
-    Task<InstallOutcome> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default);
+    Task<InstallResult> InstallAsync(IReadOnlyList<string>? packageIds, CancellationToken ct = default);
 }

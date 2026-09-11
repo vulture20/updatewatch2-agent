@@ -76,9 +76,9 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task AcknowledgeInstallAsync(InstallOutcome outcome, CancellationToken ct = default)
+    public async Task AcknowledgeInstallAsync(InstallOutcome outcome, string? errorDetail, CancellationToken ct = default)
     {
-        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.InstallAck(Environment.MachineName), new InstallAckRequest(outcome), JsonOptions, ct);
+        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.InstallAck(Environment.MachineName), new InstallAckRequest(outcome, errorDetail), JsonOptions, ct);
         response.EnsureSuccessStatusCode();
     }
 

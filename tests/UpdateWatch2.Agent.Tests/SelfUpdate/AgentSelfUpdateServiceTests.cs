@@ -170,7 +170,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default) => throw new NotSupportedException();
 
-        public Task AcknowledgeInstallAsync(InstallOutcome outcome, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task AcknowledgeInstallAsync(InstallOutcome outcome, string? errorDetail, CancellationToken ct = default) => throw new NotSupportedException();
 
         public Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default) => throw new NotSupportedException();
 
