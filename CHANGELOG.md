@@ -10,6 +10,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.15.4] - 2026-09-11
+
+### Changed
+
+- **Checked, at the user's request, whether `LinuxPackageApplier` (the self-update apply step) was similarly affected by the argument-injection class fixed in 0.15.3 — it wasn't, but hardened it anyway for consistency.** The downloaded artifact path `dpkg -i`/`rpm -U` receives is always `Path.Combine` of a fixed, agent-owned absolute staging directory and a filename — `Path.Combine` only omits its first argument when the second is itself rooted, and either way the result is guaranteed to start with `/`, never `-`, so this class's argument parser could never mistake it for a flag the way a bare, unconstrained package-name string could in the sibling classes. Added the same `--` end-of-options marker anyway (pure defense-in-depth/consistency, not a fix for an actually-reachable issue), and pulled the command-building logic out into a new testable `BuildInstallCommand` static method, mirroring `Apt`/`DnfUpdateSession.BuildInstallArgs`.
+
 ## [0.15.3] - 2026-09-11
 
 ### Fixed

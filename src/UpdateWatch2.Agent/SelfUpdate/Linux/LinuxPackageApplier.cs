@@ -71,11 +71,33 @@ namespace UpdateWatch2.Agent.SelfUpdate.Linux;
 [SupportedOSPlatform("linux")]
 public class LinuxPackageApplier(AgentUpdateAssetKind assetKind, ILogger<LinuxPackageApplier> logger) : IPlatformUpdateApplier
 {
+    /// <summary>
+    /// Builds the <c>dpkg</c>/<c>rpm</c> invocation for an already-
+    /// downloaded artifact — pulled out as its own testable pure function
+    /// (mirroring <c>Apt</c>/<c>DnfUpdateSession.BuildInstallArgs</c>'s
+    /// own convention) after checking, at the user's request, whether
+    /// this class was similarly affected by the argument-injection class
+    /// that hit those two. It structurally isn't: <paramref name="downloadedFilePath"/>
+    /// is always <c>Path.Combine</c> of a fixed, agent-owned absolute
+    /// staging directory and a filename — <c>Path.Combine</c> only omits
+    /// its first argument when the second is itself rooted, and either
+    /// way the result is guaranteed to start with <c>/</c>, never
+    /// <c>-</c>, so <c>dpkg</c>/<c>rpm</c>'s argument parser can never
+    /// mistake it for a flag the way a bare, unconstrained package-name
+    /// string could. The <c>--</c> marker added here anyway is pure
+    /// defense-in-depth/consistency with that sibling fix, not a fix for
+    /// an actually-reachable issue — both tools' getopt-based parsers
+    /// honor it the same standard way, with no behavior change for the
+    /// always-absolute path this already only ever receives.
+    /// </summary>
+    public static (string Command, string[] Args) BuildInstallCommand(AgentUpdateAssetKind assetKind, string downloadedFilePath) =>
+        assetKind == AgentUpdateAssetKind.LinuxRpm
+            ? ("rpm", ["-U", "--", downloadedFilePath])
+            : ("dpkg", ["-i", "--", downloadedFilePath]);
+
     public Task<bool> ApplyAsync(string downloadedFilePath, CancellationToken ct)
     {
-        var (command, installArgs) = assetKind == AgentUpdateAssetKind.LinuxRpm
-            ? ("rpm", new[] { "-U", downloadedFilePath })
-            : ("dpkg", new[] { "-i", downloadedFilePath });
+        var (command, installArgs) = BuildInstallCommand(assetKind, downloadedFilePath);
 
         try
         {
