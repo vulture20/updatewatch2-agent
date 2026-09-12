@@ -172,6 +172,8 @@ public class AgentSelfUpdateServiceTests : IDisposable
 
         public Task AcknowledgeInstallAsync(InstallOutcome outcome, string? errorDetail, CancellationToken ct = default) => throw new NotSupportedException();
 
+        public Task AcknowledgeRestartAsync(RestartOutcome outcome, string? errorDetail, CancellationToken ct = default) => throw new NotSupportedException();
+
         public Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default) => throw new NotSupportedException();
 
         public Task<RenewCertificateResult> RenewCertificateAsync(CancellationToken ct = default) => throw new NotSupportedException();

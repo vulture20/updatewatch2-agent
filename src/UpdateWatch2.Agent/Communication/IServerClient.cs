@@ -62,6 +62,18 @@ public interface IServerClient
     /// </summary>
     Task AcknowledgeInstallAsync(InstallOutcome outcome, string? errorDetail, CancellationToken ct = default);
 
+    /// <summary>
+    /// Acknowledges that this agent acted on a pending restart request,
+    /// reported via <see cref="AliveResult.RestartRequested"/>. Mirrors
+    /// <see cref="AcknowledgeInstallAsync"/>'s own reasoning: if this call
+    /// itself fails to reach the server, <c>Agent.PendingRestartRequestedAt</c>
+    /// stays set server-side, so the freshly-restarted process's own first
+    /// heartbeat simply sees the same restart request again and restarts a
+    /// second time — one harmless extra cycle, not a stuck state, no
+    /// special retry handling needed here.
+    /// </summary>
+    Task AcknowledgeRestartAsync(RestartOutcome outcome, string? errorDetail, CancellationToken ct = default);
+
     /// <summary>Fetches the server's four version numbers. Anonymous; no cert needed — used for protocol-compatibility detection (updatewatch2-server#3).</summary>
     Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default);
 

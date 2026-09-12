@@ -10,6 +10,9 @@ using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.Configuration.Linux;
 using UpdateWatch2.Agent.Configuration.Windows;
+using UpdateWatch2.Agent.Restart;
+using UpdateWatch2.Agent.Restart.Linux;
+using UpdateWatch2.Agent.Restart.Windows;
 using UpdateWatch2.Agent.SelfUpdate;
 using UpdateWatch2.Agent.SelfUpdate.Linux;
 using UpdateWatch2.Agent.SelfUpdate.Windows;
@@ -86,6 +89,7 @@ if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<IUpdateChecker, WindowsUpdateChecker>();
     builder.Services.AddSingleton<IClientCertificateStore, WindowsClientCertificateStore>();
     builder.Services.AddSingleton<IPlatformUpdateApplier, WindowsInstallerApplier>();
+    builder.Services.AddSingleton<IAgentRestarter, WindowsAgentRestarter>();
     builder.Services.AddSingleton<IAgentSelfUpdater>(sp => new AgentSelfUpdateService(
         AgentUpdateAssetKind.WindowsInstaller,
         selfUpdateStagingDirectory,
@@ -143,6 +147,10 @@ else if (OperatingSystem.IsLinux())
     }
 
     builder.Services.AddSingleton<IClientCertificateStore, LinuxClientCertificateStore>();
+    // Not gated on which package manager (if any) was detected above — a
+    // plain systemctl restart doesn't depend on apt vs. dnf vs. neither,
+    // unlike self-update/OS-update-install, which need the right tool.
+    builder.Services.AddSingleton<IAgentRestarter, LinuxAgentRestarter>();
 }
 else
 {

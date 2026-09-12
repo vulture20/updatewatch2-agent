@@ -107,7 +107,8 @@ public record AliveResult(
     bool InstallRequested,
     IReadOnlyList<string>? InstallUpdateIds = null,
     AgentUpdateOffer? AgentUpdateAvailable = null,
-    bool CertificateRotationPending = false)
+    bool CertificateRotationPending = false,
+    bool RestartRequested = false)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }
@@ -148,3 +149,24 @@ public enum InstallOutcome
 /// codebase — an older server build simply ignores the extra field.
 /// </summary>
 public record InstallAckRequest(InstallOutcome Outcome, string? ErrorDetail = null);
+
+/// <summary>
+/// Wire-facing mirror of the server's own <c>Agents.RestartOutcome</c> —
+/// kept as its own separate type from <see cref="InstallOutcome"/> even
+/// though the shape is identical, matching this codebase's existing
+/// checker-facing/wire-facing DTO layering: a service restart is a
+/// distinct agent-lifecycle action, never conflated with an OS-update
+/// install (CLAUDE.md's "agent self-update is a separate mechanism...
+/// not to be conflated with" rule applies by the same reasoning here).
+/// Serialized as its name, matching the server's own
+/// [JsonConverter(JsonStringEnumConverter)] on Agents.RestartOutcome.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RestartOutcome
+{
+    Succeeded,
+    Failed,
+}
+
+/// <summary>Body of <c>POST .../restart-ack</c> — this agent's acknowledgement that it acted on a pending restart request.</summary>
+public record RestartAckRequest(RestartOutcome Outcome, string? ErrorDetail = null);

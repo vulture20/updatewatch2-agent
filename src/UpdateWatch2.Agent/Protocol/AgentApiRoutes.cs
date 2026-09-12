@@ -36,4 +36,7 @@ public static class AgentApiRoutes
 
     /// <summary>Acknowledges a remote-triggered install (updatewatch2-server#10/updatewatch2-agent#4) — see HeartbeatWorker.</summary>
     public static string InstallAck(string hostname) => $"/api/agents/{Uri.EscapeDataString(hostname)}/install-ack";
+
+    /// <summary>Acknowledges a remote-triggered service restart — see HeartbeatWorker.</summary>
+    public static string RestartAck(string hostname) => $"/api/agents/{Uri.EscapeDataString(hostname)}/restart-ack";
 }
