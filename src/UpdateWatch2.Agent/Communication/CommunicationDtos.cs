@@ -20,8 +20,14 @@ public record RegisterRequest(string? DnsName, string OperatingSystem, string? I
 /// (server-side) never runs again for an already-certified agent, so this
 /// is the only remaining channel to keep IP/OS/DNS/version current after
 /// approval — see this type's server-side counterpart, <c>AgentAliveRequest</c>.
+/// <see cref="BootTimeUtc"/> is the same idea, added later, for the
+/// remote-reboot feature — computed from <c>Environment.TickCount64</c>,
+/// which .NET implements portably on both Windows and Linux, so no
+/// platform-specific code is needed to report it. Lets an admin actually
+/// confirm a triggered reboot took effect (this value jumping forward to
+/// a recent timestamp on a later heartbeat).
 /// </summary>
-public record AliveRequest(string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion);
+public record AliveRequest(string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion, DateTimeOffset? BootTimeUtc = null);
 
 /// <summary>
 /// Property names match the server's camelCase JSON output field-for-field
@@ -108,7 +114,7 @@ public record AliveResult(
     IReadOnlyList<string>? InstallUpdateIds = null,
     AgentUpdateOffer? AgentUpdateAvailable = null,
     bool CertificateRotationPending = false,
-    bool RestartRequested = false)
+    bool RebootRequested = false)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }
@@ -151,22 +157,27 @@ public enum InstallOutcome
 public record InstallAckRequest(InstallOutcome Outcome, string? ErrorDetail = null);
 
 /// <summary>
-/// Wire-facing mirror of the server's own <c>Agents.RestartOutcome</c> —
+/// Wire-facing mirror of the server's own <c>Agents.RebootOutcome</c> —
 /// kept as its own separate type from <see cref="InstallOutcome"/> even
 /// though the shape is identical, matching this codebase's existing
-/// checker-facing/wire-facing DTO layering: a service restart is a
-/// distinct agent-lifecycle action, never conflated with an OS-update
-/// install (CLAUDE.md's "agent self-update is a separate mechanism...
-/// not to be conflated with" rule applies by the same reasoning here).
+/// checker-facing/wire-facing DTO layering: a machine reboot is a
+/// distinct action from an OS-update install, deliberately never
+/// conflated (CLAUDE.md's "update installation never triggers a reboot
+/// itself... the admin decides when to actually trigger a reboot" rule is
+/// exactly the distinction this type exists to preserve on the wire).
 /// Serialized as its name, matching the server's own
-/// [JsonConverter(JsonStringEnumConverter)] on Agents.RestartOutcome.
+/// [JsonConverter(JsonStringEnumConverter)] on Agents.RebootOutcome.
+/// "Succeeded" only ever means the platform's reboot command was
+/// scheduled successfully, not that the machine has actually come back up
+/// yet — that's instead visible via <see cref="AliveRequest.BootTimeUtc"/>
+/// jumping forward on a later heartbeat.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum RestartOutcome
+public enum RebootOutcome
 {
     Succeeded,
     Failed,
 }
 
-/// <summary>Body of <c>POST .../restart-ack</c> — this agent's acknowledgement that it acted on a pending restart request.</summary>
-public record RestartAckRequest(RestartOutcome Outcome, string? ErrorDetail = null);
+/// <summary>Body of <c>POST .../reboot-ack</c> — this agent's acknowledgement that it acted on a pending reboot request.</summary>
+public record RebootAckRequest(RebootOutcome Outcome, string? ErrorDetail = null);

@@ -4,12 +4,12 @@ using System.Security.Cryptography.X509Certificates;
 using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
-using UpdateWatch2.Agent.Restart;
+using UpdateWatch2.Agent.Reboot;
 using UpdateWatch2.Agent.SelfUpdate;
 using UpdateWatch2.Agent.UpdateCheck;
 using CheckerInstallOutcome = UpdateWatch2.Agent.UpdateCheck.InstallOutcome;
 using WireInstallOutcome = UpdateWatch2.Agent.Communication.InstallOutcome;
-using WireRestartOutcome = UpdateWatch2.Agent.Communication.RestartOutcome;
+using WireRebootOutcome = UpdateWatch2.Agent.Communication.RebootOutcome;
 
 namespace UpdateWatch2.Agent;
 
@@ -36,9 +36,10 @@ namespace UpdateWatch2.Agent;
 /// (updatewatch2-server#6 follow-up — CA rotation never reissues an
 /// already-onboarded agent's leaf on its own, so this prompts an eager
 /// renewal instead of relying solely on the lead-time check above), and
-/// whether an admin has remote-triggered a restart of this agent's own
-/// service process (distinct from an OS reboot and from an update
-/// install — see <see cref="Restart.IAgentRestarter"/>), and —
+/// whether an admin has remote-triggered a reboot of this agent's own
+/// machine (distinct from an update install, which per CLAUDE.md's rule
+/// never triggers a reboot itself — see <see cref="Reboot.IAgentRebooter"/>),
+/// and —
 /// purely local, no server involvement — deleting old downloaded
 /// self-update packages from the staging directory that are older than
 /// <see cref="AgentOptions.SelfUpdateStagingRetentionDays"/>, always
@@ -63,7 +64,7 @@ public class HeartbeatWorker(
     IAgentSelfUpdater selfUpdater,
     SelfUpdateStagingCleaner selfUpdateStagingCleaner,
     IRegistrationWakeSignal wakeSignal,
-    IAgentRestarter agentRestarter,
+    IAgentRebooter agentRebooter,
     ILogger<HeartbeatWorker> logger) : BackgroundService
 {
     // A single 401/403 could in principle be some transient fluke this
@@ -192,13 +193,13 @@ public class HeartbeatWorker(
                     await HandleCertificateRotationRenewalAsync(ct);
                 }
 
-                // Last, deliberately: a successful restart trigger ends
+                // Last, deliberately: a successful reboot trigger ends
                 // this very process shortly after, so anything else this
                 // tick has to do (install, self-update, cert renewal) runs
                 // first while there's still a process left to do it in.
-                if (result.RestartRequested)
+                if (result.RebootRequested)
                 {
-                    await HandleRestartRequestAsync(ct);
+                    await HandleRebootRequestAsync(ct);
                 }
             }
 
@@ -302,24 +303,24 @@ public class HeartbeatWorker(
     /// <summary>
     /// Invoked inline on the heartbeat's own tick, same as
     /// <see cref="HandleInstallRequestAsync"/> — but unlike that method,
-    /// the acknowledgement here is sent BEFORE the actual OS-level effect,
-    /// not after: <see cref="IAgentRestarter.RequestRestart"/> only
-    /// launches the platform-specific stop-then-start mechanism and
-    /// returns almost immediately (see that interface's own doc comment),
-    /// but the whole point of a successful call is that this very process
-    /// gets torn down shortly after — there is no "after" left in which to
-    /// still reach the server once that has happened.
+    /// the acknowledgement here is sent BEFORE the machine actually goes
+    /// down, not after: <see cref="IAgentRebooter.RequestReboot"/> only
+    /// SCHEDULES the platform's reboot command and returns almost
+    /// immediately (see that interface's own doc comment), but the whole
+    /// point of a successful call is that this machine reboots shortly
+    /// after — there is no "after" left in which to still reach the
+    /// server once that has happened.
     /// </summary>
-    private async Task HandleRestartRequestAsync(CancellationToken ct)
+    private async Task HandleRebootRequestAsync(CancellationToken ct)
     {
-        logger.LogInformation("Server requested a restart of this agent's own service process.");
+        logger.LogInformation("Server requested a reboot of this agent's own machine.");
 
-        WireRestartOutcome outcome;
+        WireRebootOutcome outcome;
         string? errorDetail = null;
         try
         {
-            agentRestarter.RequestRestart();
-            outcome = WireRestartOutcome.Succeeded;
+            agentRebooter.RequestReboot();
+            outcome = WireRebootOutcome.Succeeded;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -327,14 +328,14 @@ public class HeartbeatWorker(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to trigger an agent restart");
-            outcome = WireRestartOutcome.Failed;
+            logger.LogError(ex, "Failed to schedule a machine reboot");
+            outcome = WireRebootOutcome.Failed;
             errorDetail = ex.Message;
         }
 
         try
         {
-            await serverClient.AcknowledgeRestartAsync(outcome, Truncate(errorDetail), ct);
+            await serverClient.AcknowledgeRebootAsync(outcome, Truncate(errorDetail), ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -342,14 +343,13 @@ public class HeartbeatWorker(
         }
         catch (Exception ex)
         {
-            // Self-resolving, same reasoning as HandleInstallRequestAsync's
-            // own ack failure handling: the server keeps reporting the
-            // restart as pending until an acknowledgement lands, so either
-            // this same process retries next tick (a Failed trigger) or —
-            // far more likely for a Succeeded one — the freshly restarted
-            // process's own first heartbeat sees it again, one harmless
-            // extra restart cycle.
-            logger.LogWarning(ex, "Failed to acknowledge the restart outcome to the server.");
+            // Same accepted trade-off as HandleInstallRequestAsync's own
+            // ack failure handling: the server keeps reporting the reboot
+            // as pending until an acknowledgement lands, so either this
+            // same process retries next tick (a Failed trigger) or — for a
+            // Succeeded one — this agent's first heartbeat after coming
+            // back up could see it again and reboot a second time.
+            logger.LogWarning(ex, "Failed to acknowledge the reboot outcome to the server.");
         }
     }
 

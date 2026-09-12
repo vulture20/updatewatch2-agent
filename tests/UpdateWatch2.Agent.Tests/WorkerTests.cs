@@ -8,12 +8,12 @@ using UpdateWatch2.Agent.Certificates;
 using UpdateWatch2.Agent.Communication;
 using UpdateWatch2.Agent.Configuration;
 using UpdateWatch2.Agent.Protocol;
-using UpdateWatch2.Agent.Restart;
+using UpdateWatch2.Agent.Reboot;
 using UpdateWatch2.Agent.SelfUpdate;
 using UpdateWatch2.Agent.UpdateCheck;
 using CheckerInstallOutcome = UpdateWatch2.Agent.UpdateCheck.InstallOutcome;
 using WireInstallOutcome = UpdateWatch2.Agent.Communication.InstallOutcome;
-using WireRestartOutcome = UpdateWatch2.Agent.Communication.RestartOutcome;
+using WireRebootOutcome = UpdateWatch2.Agent.Communication.RebootOutcome;
 
 namespace UpdateWatch2.Agent.Tests;
 
@@ -589,60 +589,60 @@ public class WorkerTests
     }
 
     [Fact]
-    public async Task HeartbeatWorker_triggers_a_restart_and_acknowledges_success_when_one_is_requested()
+    public async Task HeartbeatWorker_triggers_a_reboot_and_acknowledges_success_when_one_is_requested()
     {
         var cts = new CancellationTokenSource();
-        var restarter = new FakeAgentRestarter();
-        WireRestartOutcome? acknowledged = null;
+        var rebooter = new FakeAgentRebooter();
+        WireRebootOutcome? acknowledged = null;
 
         var client = new FakeServerClient(
             onSendAlive: () => cts.Cancel(),
-            onRestartRequested: _ => true,
-            onAcknowledgeRestart: (outcome, _) => acknowledged = outcome);
+            onRebootRequested: _ => true,
+            onAcknowledgeReboot: (outcome, _) => acknowledged = outcome);
 
-        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), agentRestarter: restarter);
-
-        await RunUntilCancelledAsync(worker, cts.Token);
-
-        Assert.Equal(1, restarter.RequestRestartCallCount);
-        Assert.Equal(1, client.AcknowledgeRestartCallCount);
-        Assert.Equal(WireRestartOutcome.Succeeded, acknowledged);
-    }
-
-    [Fact]
-    public async Task HeartbeatWorker_does_not_trigger_a_restart_when_none_is_requested()
-    {
-        var cts = new CancellationTokenSource();
-        var restarter = new FakeAgentRestarter();
-        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onRestartRequested: _ => false);
-
-        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), agentRestarter: restarter);
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), agentRebooter: rebooter);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
-        Assert.Equal(0, restarter.RequestRestartCallCount);
-        Assert.Equal(0, client.AcknowledgeRestartCallCount);
+        Assert.Equal(1, rebooter.RequestRebootCallCount);
+        Assert.Equal(1, client.AcknowledgeRebootCallCount);
+        Assert.Equal(WireRebootOutcome.Succeeded, acknowledged);
     }
 
     [Fact]
-    public async Task HeartbeatWorker_acknowledges_failure_and_the_exception_message_when_the_restarter_throws()
+    public async Task HeartbeatWorker_does_not_trigger_a_reboot_when_none_is_requested()
     {
         var cts = new CancellationTokenSource();
-        var restarter = new FakeAgentRestarter(throwOnRequest: new InvalidOperationException("simulated restart failure"));
-        WireRestartOutcome? acknowledged = null;
+        var rebooter = new FakeAgentRebooter();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onRebootRequested: _ => false);
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), agentRebooter: rebooter);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, rebooter.RequestRebootCallCount);
+        Assert.Equal(0, client.AcknowledgeRebootCallCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_acknowledges_failure_and_the_exception_message_when_the_rebooter_throws()
+    {
+        var cts = new CancellationTokenSource();
+        var rebooter = new FakeAgentRebooter(throwOnRequest: new InvalidOperationException("simulated reboot failure"));
+        WireRebootOutcome? acknowledged = null;
         string? acknowledgedDetail = null;
 
         var client = new FakeServerClient(
             onSendAlive: () => cts.Cancel(),
-            onRestartRequested: _ => true,
-            onAcknowledgeRestart: (outcome, detail) => (acknowledged, acknowledgedDetail) = (outcome, detail));
+            onRebootRequested: _ => true,
+            onAcknowledgeReboot: (outcome, detail) => (acknowledged, acknowledgedDetail) = (outcome, detail));
 
-        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), agentRestarter: restarter);
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), agentRebooter: rebooter);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
-        Assert.Equal(WireRestartOutcome.Failed, acknowledged);
-        Assert.Equal("simulated restart failure", acknowledgedDetail);
+        Assert.Equal(WireRebootOutcome.Failed, acknowledged);
+        Assert.Equal("simulated reboot failure", acknowledgedDetail);
     }
 
     [Fact]
@@ -774,7 +774,7 @@ public class WorkerTests
         IAgentSelfUpdater? selfUpdater = null,
         SelfUpdateStagingCleaner? selfUpdateStagingCleaner = null,
         IRegistrationWakeSignal? wakeSignal = null,
-        IAgentRestarter? agentRestarter = null) =>
+        IAgentRebooter? agentRebooter = null) =>
         new(options, client, certificateState,
             certificateStore ?? new FakeClientCertificateStore(existing: null),
             caTrustStore ?? new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem")),
@@ -790,7 +790,7 @@ public class WorkerTests
                 Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-selfupdate-staging-{Guid.NewGuid()}"),
                 NullLogger<SelfUpdateStagingCleaner>.Instance),
             wakeSignal ?? new RegistrationWakeSignal(),
-            agentRestarter ?? new FakeAgentRestarter(),
+            agentRebooter ?? new FakeAgentRebooter(),
             logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     private static AgentCertificateState ReadyCertificateState()
@@ -860,8 +860,8 @@ public class WorkerTests
         Func<string, string, Task>? onDownloadFile = null,
         Func<int, bool>? onCertificateRotationPending = null,
         Func<int, IReadOnlyList<string>?>? onInstallUpdateIds = null,
-        Func<int, bool>? onRestartRequested = null,
-        Action<WireRestartOutcome, string?>? onAcknowledgeRestart = null) : IServerClient
+        Func<int, bool>? onRebootRequested = null,
+        Action<WireRebootOutcome, string?>? onAcknowledgeReboot = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
@@ -869,7 +869,7 @@ public class WorkerTests
 
         public int AcknowledgeInstallCallCount { get; private set; }
 
-        public int AcknowledgeRestartCallCount { get; private set; }
+        public int AcknowledgeRebootCallCount { get; private set; }
 
         public int DownloadFileCallCount { get; private set; }
 
@@ -890,8 +890,8 @@ public class WorkerTests
             var installUpdateIds = outcome == AliveOutcome.Success ? onInstallUpdateIds?.Invoke(SendAliveCallCount) : null;
             var agentUpdateAvailable = outcome == AliveOutcome.Success ? onAgentUpdateAvailable?.Invoke(SendAliveCallCount) : null;
             var certificateRotationPending = outcome == AliveOutcome.Success && (onCertificateRotationPending?.Invoke(SendAliveCallCount) ?? false);
-            var restartRequested = outcome == AliveOutcome.Success && (onRestartRequested?.Invoke(SendAliveCallCount) ?? false);
-            return Task.FromResult(new AliveResult(outcome, installRequested, installUpdateIds, agentUpdateAvailable, certificateRotationPending, restartRequested));
+            var rebootRequested = outcome == AliveOutcome.Success && (onRebootRequested?.Invoke(SendAliveCallCount) ?? false);
+            return Task.FromResult(new AliveResult(outcome, installRequested, installUpdateIds, agentUpdateAvailable, certificateRotationPending, rebootRequested));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
@@ -916,10 +916,10 @@ public class WorkerTests
             return Task.CompletedTask;
         }
 
-        public Task AcknowledgeRestartAsync(WireRestartOutcome outcome, string? errorDetail, CancellationToken ct = default)
+        public Task AcknowledgeRebootAsync(WireRebootOutcome outcome, string? errorDetail, CancellationToken ct = default)
         {
-            AcknowledgeRestartCallCount++;
-            onAcknowledgeRestart?.Invoke(outcome, errorDetail);
+            AcknowledgeRebootCallCount++;
+            onAcknowledgeReboot?.Invoke(outcome, errorDetail);
             return Task.CompletedTask;
         }
 
@@ -930,13 +930,13 @@ public class WorkerTests
         }
     }
 
-    private class FakeAgentRestarter(Exception? throwOnRequest = null) : IAgentRestarter
+    private class FakeAgentRebooter(Exception? throwOnRequest = null) : IAgentRebooter
     {
-        public int RequestRestartCallCount { get; private set; }
+        public int RequestRebootCallCount { get; private set; }
 
-        public void RequestRestart()
+        public void RequestReboot()
         {
-            RequestRestartCallCount++;
+            RequestRebootCallCount++;
             if (throwOnRequest is not null)
             {
                 throw throwOnRequest;

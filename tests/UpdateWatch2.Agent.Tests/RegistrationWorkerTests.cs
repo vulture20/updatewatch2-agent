@@ -457,7 +457,7 @@ public class RegistrationWorkerTests : IDisposable
 
         public Task AcknowledgeInstallAsync(InstallOutcome outcome, string? errorDetail, CancellationToken ct = default) => Task.CompletedTask;
 
-        public Task AcknowledgeRestartAsync(RestartOutcome outcome, string? errorDetail, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AcknowledgeRebootAsync(RebootOutcome outcome, string? errorDetail, CancellationToken ct = default) => Task.CompletedTask;
 
         public Task DownloadFileAsync(string downloadUrl, string destinationPath, CancellationToken ct = default) => Task.CompletedTask;
     }

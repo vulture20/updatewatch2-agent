@@ -47,7 +47,8 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             DnsName: ResolveDnsName(),
             OperatingSystem: OperatingSystemDescriber.Describe(),
             IpAddress: ResolveOutboundIpAddress(),
-            AgentVersion: AgentVersion.Current);
+            AgentVersion: AgentVersion.Current,
+            BootTimeUtc: ResolveBootTimeUtc());
 
         var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.Alive(Environment.MachineName), request, JsonOptions, ct);
         if (response.IsSuccessStatusCode)
@@ -55,7 +56,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
             return new AliveResult(
                 AliveOutcome.Success, body?.InstallRequested ?? false, body?.InstallUpdateIds, body?.AgentUpdateAvailable,
-                body?.CertificateRotationPending ?? false, body?.RestartRequested ?? false);
+                body?.CertificateRotationPending ?? false, body?.RebootRequested ?? false);
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -72,7 +73,16 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
     private record AliveResponseBody(
         bool InstallRequested, IReadOnlyList<string>? InstallUpdateIds, AgentUpdateOffer? AgentUpdateAvailable,
-        bool CertificateRotationPending, bool RestartRequested);
+        bool CertificateRotationPending, bool RebootRequested);
+
+    /// <summary>
+    /// Computes when this machine last booted from <see cref="Environment.TickCount64"/>
+    /// — milliseconds since system startup, a .NET API implemented
+    /// portably on both Windows and Linux, so no platform-specific code is
+    /// needed here at all (unlike every other self-reported-metadata
+    /// helper in this class, this one needs no OS-specific branch).
+    /// </summary>
+    private static DateTimeOffset ResolveBootTimeUtc() => DateTimeOffset.UtcNow.AddMilliseconds(-Environment.TickCount64);
 
     public async Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
     {
@@ -86,9 +96,9 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task AcknowledgeRestartAsync(RestartOutcome outcome, string? errorDetail, CancellationToken ct = default)
+    public async Task AcknowledgeRebootAsync(RebootOutcome outcome, string? errorDetail, CancellationToken ct = default)
     {
-        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.RestartAck(Environment.MachineName), new RestartAckRequest(outcome, errorDetail), JsonOptions, ct);
+        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.RebootAck(Environment.MachineName), new RebootAckRequest(outcome, errorDetail), JsonOptions, ct);
         response.EnsureSuccessStatusCode();
     }
 
