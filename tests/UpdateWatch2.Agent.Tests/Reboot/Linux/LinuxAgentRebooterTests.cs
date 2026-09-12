@@ -6,7 +6,7 @@ namespace UpdateWatch2.Agent.Tests.Reboot.Linux;
 /// <summary>
 /// Covers <see cref="LinuxAgentRebooter.BuildRebootArgs"/> only — the
 /// pure, testable half of <see cref="LinuxAgentRebooter"/>; the actual
-/// launching-shutdown half remains untested here, mirroring
+/// launching-systemd-run half remains untested here, mirroring
 /// <c>AptUpdateSessionTests</c>' precedent for its own class's
 /// <c>BuildInstallArgs</c>.
 /// </summary>
@@ -14,10 +14,12 @@ namespace UpdateWatch2.Agent.Tests.Reboot.Linux;
 public class LinuxAgentRebooterTests
 {
     [Fact]
-    public void BuildRebootArgs_schedules_a_reboot_with_the_given_delay_and_message()
+    public void BuildRebootArgs_schedules_a_systemctl_reboot_after_the_given_delay()
     {
-        var args = LinuxAgentRebooter.BuildRebootArgs("+1", "UpdateWatch2: reboot requested by an administrator.");
+        var args = LinuxAgentRebooter.BuildRebootArgs(10, "updatewatch2-agent-reboot-abc123");
 
-        Assert.Equal(["-r", "+1", "UpdateWatch2: reboot requested by an administrator."], args);
+        Assert.Equal(
+            ["--collect", "--unit=updatewatch2-agent-reboot-abc123", "--on-active=10", "--", "systemctl", "reboot"],
+            args);
     }
 }

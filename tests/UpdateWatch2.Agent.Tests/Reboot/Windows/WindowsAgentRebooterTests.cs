@@ -22,8 +22,8 @@ public class WindowsAgentRebooterTests
     [Fact]
     public void BuildRebootArgs_schedules_a_reboot_with_the_given_delay_and_message()
     {
-        var args = WindowsAgentRebooter.BuildRebootArgs(60, "UpdateWatch2: reboot requested by an administrator.");
+        var args = WindowsAgentRebooter.BuildRebootArgs(10, "UpdateWatch2: reboot requested by an administrator.");
 
-        Assert.Equal(["/r", "/t", "60", "/c", "UpdateWatch2: reboot requested by an administrator."], args);
+        Assert.Equal(["/r", "/t", "10", "/c", "UpdateWatch2: reboot requested by an administrator."], args);
     }
 }

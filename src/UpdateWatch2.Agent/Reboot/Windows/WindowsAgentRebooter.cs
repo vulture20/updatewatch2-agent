@@ -23,11 +23,13 @@ namespace UpdateWatch2.Agent.Reboot.Windows;
 [SupportedOSPlatform("windows")]
 public class WindowsAgentRebooter(ILogger<WindowsAgentRebooter> logger) : IAgentRebooter
 {
-    // A short grace period (matching typical remote-reboot tooling
-    // convention) rather than an immediate /t 0 — gives this agent's own
-    // AcknowledgeRebootAsync call, and anything else briefly using the
-    // machine, a moment before it actually goes down.
-    private const int DelaySeconds = 60;
+    // A short grace period rather than an immediate /t 0 — gives this
+    // agent's own AcknowledgeRebootAsync call a moment to actually reach
+    // the server before the machine goes down. 10s is comfortably more
+    // than that HTTP call ever takes in practice; a full 60s (this
+    // constant's original value) was reported as needlessly long for
+    // what's an automated admin action, not a user-facing warning period.
+    private const int DelaySeconds = 10;
     private const string Message = "UpdateWatch2: reboot requested by an administrator.";
 
     /// <summary>

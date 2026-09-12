@@ -10,6 +10,13 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.16.1] - 2026-09-12
+
+### Fixed
+
+- **Both reboot delays shortened to a matching, second-precise 10s, at the user's report that Windows' 60s wait was needlessly long.** Comparing `WindowsAgentRebooter`'s `/t 60` against `LinuxAgentRebooter`'s `+1` made the two look wildly different (one "60", one "1") — they were actually already the same delay, just in different units: `shutdown`'s `+m` syntax is whole *minutes*, so `+1` meant 1 minute (60s), not 1 second. Neither platform could go shorter than that misreading suggested was already happening on Linux, since `shutdown -r +m` has no sub-minute granularity at all (only whole minutes, or `now` — immediate, which would race the agent's own `AcknowledgeRebootAsync` call). `LinuxAgentRebooter` now schedules the reboot via `systemd-run --on-active=<seconds> -- systemctl reboot` instead of `shutdown -r +<minutes>` — a one-shot systemd timer with plain-seconds granularity — so both platforms now share the exact same 10-second constant (comfortably more than the ack call ever takes, nowhere near the minute-plus either platform was actually stuck at before). The one real trade-off: `systemd-run` has no wall-broadcast-message equivalent, so the "reboot requested by an administrator" message users on the Linux machine used to see is gone — acceptable for a headless server agent, and never an essential part of the feature to begin with.
+- Test coverage updated: `WindowsAgentRebooterTests`/`LinuxAgentRebooterTests`' `BuildRebootArgs` assertions now cover the new 10s constant and (Linux) the new `systemd-run` argument shape.
+
 ## [0.16.0] - 2026-09-12
 
 ### Added
