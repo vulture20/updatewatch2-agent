@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.1] - 2026-09-13
+
+### Fixed
+
+- **NSIS installer's "Server Connection" page: the server-address label's text wrapped onto a second line that the address text field then half-covered — reported by the user directly ("Der Text ... wird in eine 2. Zeile umgebrochen. Dadurch verdeckt das Textfeld die 2. Zeile halb.").** `installer/nsis/setup.nsi`'s `ServerConfigPageCreate` gave that label only 12u of height (one line), matching every other single-line label on the page, but its own text ("Server address (hostname or IP) — must match the server's UPDATEWATCH2_SERVER_HOSTNAME:") is long enough to wrap at the dialog's default width — the page's own "Leave blank..." label already accounted for wrapping onto two lines with 24u, confirming 12u/24u as this page's established one-line/two-line convention. Fixed by giving the address label 24u too and shifting every control below it (the port label/field, the "leave blank" hint) down by the resulting 12u, keeping each label/field pair's own spacing unchanged. Not live-verified against a real Windows install (no Windows host available in this session) — same standing caveat this project already carries for the rest of the NSIS install/uninstall path; re-confirm the page renders correctly on a real target host before relying on this further.
+
 ## [1.0.0] - 2026-09-13
 
 ### Changed

@@ -164,17 +164,24 @@ Function ServerConfigPageCreate
   nsDialogs::Create 1018
   Pop $0
 
-  ${NSD_CreateLabel} 0 0 100% 12u "Server address (hostname or IP) — must match the server's UPDATEWATCH2_SERVER_HOSTNAME:"
+  ; This label's text is long enough to wrap onto a second line at the
+  ; dialog's default width — 24u (two lines), not 12u (one), or its own
+  ; second line sits underneath $ServerAddressField, which used to start
+  ; just 2u below (found by a user report: "der Text ... wird in eine 2.
+  ; Zeile umgebrochen. Dadurch verdeckt das Textfeld die 2. Zeile halb.").
+  ; Every control below is shifted down by the same 12u this added, to
+  ; keep each label/field pair's own spacing unchanged.
+  ${NSD_CreateLabel} 0 0 100% 24u "Server address (hostname or IP) — must match the server's UPDATEWATCH2_SERVER_HOSTNAME:"
   Pop $0
-  ${NSD_CreateText} 0 14u 100% 12u "$ServerAddress"
+  ${NSD_CreateText} 0 26u 100% 12u "$ServerAddress"
   Pop $ServerAddressField
 
-  ${NSD_CreateLabel} 0 34u 100% 12u "Server agent port (UPDATEWATCH2 mTLS port, default 8796):"
+  ${NSD_CreateLabel} 0 46u 100% 12u "Server agent port (UPDATEWATCH2 mTLS port, default 8796):"
   Pop $0
-  ${NSD_CreateText} 0 48u 60u 12u "$ServerPort"
+  ${NSD_CreateText} 0 60u 60u 12u "$ServerPort"
   Pop $ServerPortField
 
-  ${NSD_CreateLabel} 0 68u 100% 24u "Leave blank to install without connecting yet — configure HKLM\SOFTWARE\UpdateWatch2\Agent by hand (or re-run this installer) before starting the service."
+  ${NSD_CreateLabel} 0 80u 100% 24u "Leave blank to install without connecting yet — configure HKLM\SOFTWARE\UpdateWatch2\Agent by hand (or re-run this installer) before starting the service."
   Pop $0
 
   nsDialogs::Show
