@@ -100,6 +100,73 @@ public class AgentSelfUpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyAsync_confines_a_download_whose_encoded_filename_contains_a_traversal_sequence_to_the_staging_directory()
+    {
+        // Security review finding: Split('/').Last() ran BEFORE
+        // UnescapeDataString, so a percent-encoded "/"/".." inside the
+        // offered filename survived the split and only became a real path
+        // separator afterward, letting Path.Combine resolve outside
+        // stagingDirectory entirely. The fix (Path.GetFileName on the
+        // decoded value) neutralizes this by reducing it to a bare
+        // filename — the download still succeeds, just safely confined,
+        // rather than needing to fail the whole update.
+        var (_, applier, service) = CreateService();
+        var maliciousAsset = SampleAsset with { DownloadUrl = "/api/agent/updates/%2Fetc%2Fpasswd" };
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+
+        var outcome = await service.ApplyAsync(offer);
+
+        Assert.Equal(SelfUpdateOutcome.Applied, outcome);
+        Assert.Equal("passwd", Path.GetFileName(applier.LastAppliedPath));
+        Assert.Equal(Path.GetFullPath(_stagingDirectory), Path.GetFullPath(Path.GetDirectoryName(applier.LastAppliedPath)!));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_confines_a_download_with_a_relative_traversal_sequence_to_the_staging_directory()
+    {
+        var (_, applier, service) = CreateService();
+        var maliciousAsset = SampleAsset with { DownloadUrl = "/api/agent/updates/..%2F..%2F..%2Ftmp%2Fevil.exe" };
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+
+        var outcome = await service.ApplyAsync(offer);
+
+        Assert.Equal(SelfUpdateOutcome.Applied, outcome);
+        Assert.Equal("evil.exe", Path.GetFileName(applier.LastAppliedPath));
+        Assert.Equal(Path.GetFullPath(_stagingDirectory), Path.GetFullPath(Path.GetDirectoryName(applier.LastAppliedPath)!));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_returns_DownloadFailed_when_the_URL_has_no_usable_filename()
+    {
+        var (serverClient, applier, service) = CreateService();
+        var maliciousAsset = SampleAsset with { DownloadUrl = "/api/agent/updates/" };
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+
+        var outcome = await service.ApplyAsync(offer);
+
+        Assert.Equal(SelfUpdateOutcome.DownloadFailed, outcome);
+        Assert.Equal(0, serverClient.DownloadCallCount);
+        Assert.Equal(0, applier.ApplyCallCount);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_refuses_an_absolute_download_URL_pointing_at_a_foreign_host()
+    {
+        // A legitimate offer's DownloadUrl is always a same-server-relative
+        // path — never trust an absolute URL, which HttpClient would
+        // otherwise fetch from whatever host it names.
+        var (serverClient, applier, service) = CreateService();
+        var maliciousAsset = SampleAsset with { DownloadUrl = "http://attacker.example/payload.exe" };
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+
+        var outcome = await service.ApplyAsync(offer);
+
+        Assert.Equal(SelfUpdateOutcome.DownloadFailed, outcome);
+        Assert.Equal(0, serverClient.DownloadCallCount);
+        Assert.Equal(0, applier.ApplyCallCount);
+    }
+
+    [Fact]
     public async Task ApplyAsync_returns_DownloadFailed_when_the_download_throws()
     {
         var (_, applier, service) = CreateService(onDownload: (_, _) => throw new HttpRequestException("simulated network failure"));

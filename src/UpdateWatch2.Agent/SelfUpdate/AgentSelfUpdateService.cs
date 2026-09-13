@@ -50,9 +50,49 @@ public class AgentSelfUpdateService(
             return SelfUpdateOutcome.NotApplicable;
         }
 
+        // Defense in depth: a legitimate offer's DownloadUrl is always a
+        // same-server-relative path (AgentUpdateAssetOffer's own doc
+        // comment) — never trust one naming a foreign host, which
+        // HttpClient would otherwise happily fetch from, bypassing the
+        // pinned-server TLS relationship entirely. Checking Uri.IsAbsoluteUri
+        // alone is NOT enough: .NET parses a leading-slash relative path
+        // like "/api/agent/updates/x.exe" as a well-formed absolute "file"
+        // URI with an EMPTY Host, so a real foreign-host URL (which always
+        // has a non-empty Host) is what actually needs rejecting here.
+        if (Uri.TryCreate(asset.DownloadUrl, UriKind.Absolute, out var parsedUrl) && !string.IsNullOrEmpty(parsedUrl.Host))
+        {
+            logger.LogError("Agent update {Version}'s offered download URL is not a relative, same-server path — refusing to fetch it.", offer.Version);
+            return SelfUpdateOutcome.DownloadFailed;
+        }
+
         Directory.CreateDirectory(stagingDirectory);
-        var fileName = Uri.UnescapeDataString(asset.DownloadUrl.Split('/').Last());
+
+        // Security review finding: the naive Split('/').Last() below runs
+        // BEFORE UnescapeDataString, so a "/" or ".." percent-encoded
+        // inside the offered filename (e.g. "%2Fetc%2Fsystemd%2F...")
+        // survives the split untouched and only becomes a real path
+        // separator afterward — and Path.Combine discards stagingDirectory
+        // entirely if the resulting "filename" turns out to be rooted.
+        // Path.GetFileName strips any directory component AFTER decoding,
+        // so this can never resolve outside stagingDirectory regardless of
+        // what the server-reported DownloadUrl's last segment decodes to —
+        // defense in depth even though the server is expected to always
+        // hand back one of its own, already-sanitized filenames.
+        var rawFileName = Uri.UnescapeDataString(asset.DownloadUrl.Split('/').Last());
+        var fileName = Path.GetFileName(rawFileName);
+        if (string.IsNullOrEmpty(fileName))
+        {
+            logger.LogError("Agent update {Version}'s offered download URL has no usable filename — refusing to apply it.", offer.Version);
+            return SelfUpdateOutcome.DownloadFailed;
+        }
+
         var destinationPath = Path.Combine(stagingDirectory, fileName);
+        var fullStagingDirectory = Path.GetFullPath(stagingDirectory) + Path.DirectorySeparatorChar;
+        if (!Path.GetFullPath(destinationPath).StartsWith(fullStagingDirectory, StringComparison.Ordinal))
+        {
+            logger.LogError("Agent update {Version}'s resolved download path escaped the staging directory — refusing to apply it.", offer.Version);
+            return SelfUpdateOutcome.DownloadFailed;
+        }
 
         try
         {

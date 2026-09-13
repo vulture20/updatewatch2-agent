@@ -10,6 +10,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.16.2] - 2026-09-13
+
+### Fixed
+
+- **Path traversal in the self-update download path (High) — found by a full, non-diff-scoped security review.** `SelfUpdate/AgentSelfUpdateService.ApplyAsync` derived the downloaded file's on-disk name from a server-supplied `AgentUpdateAssetOffer.DownloadUrl` via `Uri.UnescapeDataString(asset.DownloadUrl.Split('/').Last())` — the split ran *before* decoding, so a percent-encoded `/`/`..` inside the offered filename survived the split untouched and only became a real path separator afterward, and `Path.Combine` discards the staging directory entirely once the result turns out to be rooted. Combined with a matching server-side gap (unsanitized GitHub release asset names — see the server repo's own CHANGELOG entry for this same finding), a malicious/compromised release on the pinned upstream repo could have made every connected agent write an attacker-controlled file to an arbitrary path — on Windows, `WindowsInstallerApplier` then executing it directly. Fixed by sanitizing the decoded filename with `Path.GetFileName` and verifying the resolved path stays inside the staging directory before ever downloading to it, plus (defense in depth) refusing a `DownloadUrl` that names a foreign host at all — a legitimate offer is always a same-server-relative path. Real test coverage added for both the traversal case (confirms the download is safely confined and renamed, not just rejected outright) and the foreign-host case.
+
 ## [0.16.1] - 2026-09-12
 
 ### Fixed
