@@ -39,4 +39,22 @@ public static class AgentApiRoutes
 
     /// <summary>Acknowledges a remote-triggered machine reboot — see HeartbeatWorker.</summary>
     public static string RebootAck(string hostname) => $"/api/agents/{Uri.EscapeDataString(hostname)}/reboot-ack";
+
+    /// <summary>
+    /// A self-update asset's download route — mirrors the server's own
+    /// route template exactly (<c>AgentProtocolController</c>'s download
+    /// action, and the identical string the server itself builds an
+    /// <c>AgentUpdateAssetOffer.DownloadUrl</c> from:
+    /// <c>$"/api/agent/updates/{Uri.EscapeDataString(fileName)}"</c>).
+    /// Security review finding: <see cref="SelfUpdate.AgentSelfUpdateService"/>
+    /// used to fetch the server-supplied <c>DownloadUrl</c> string
+    /// verbatim after only validating it looked safe — a blacklist-style
+    /// check that's inherently fragile against URL-parsing edge cases
+    /// (protocol-relative <c>//host/path</c> references, backslash
+    /// variants, ...). Calling this helper with the already-sanitized bare
+    /// filename instead means the fetch target is same-origin-relative BY
+    /// CONSTRUCTION, not by validating-then-still-trusting the original
+    /// untrusted string — there's no longer a check to bypass at all.
+    /// </summary>
+    public static string UpdateDownload(string fileName) => $"/api/agent/updates/{Uri.EscapeDataString(fileName)}";
 }

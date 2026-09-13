@@ -150,20 +150,49 @@ public class AgentSelfUpdateServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ApplyAsync_refuses_an_absolute_download_URL_pointing_at_a_foreign_host()
+    public async Task ApplyAsync_never_fetches_an_absolute_foreign_host_URL_verbatim_even_though_it_extracts_the_filename_from_it()
     {
-        // A legitimate offer's DownloadUrl is always a same-server-relative
-        // path — never trust an absolute URL, which HttpClient would
-        // otherwise fetch from whatever host it names.
-        var (serverClient, applier, service) = CreateService();
+        // A blacklist-style "reject anything that looks like an absolute
+        // URL with a host" check turned out to be the wrong shape of fix
+        // (an automated follow-up review found it could still be
+        // bypassed by URL-parsing edge cases, e.g. a protocol-relative
+        // "//host/path" reference). This asserts the actual, structural
+        // fix instead: the fetch target is always rebuilt from the
+        // already-sanitized bare filename via AgentApiRoutes.UpdateDownload
+        // — the original, potentially-foreign-host string is never itself
+        // passed to DownloadFileAsync, no matter what it contains.
+        var (serverClient, _, service) = CreateService();
         var maliciousAsset = SampleAsset with { DownloadUrl = "http://attacker.example/payload.exe" };
         var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
-        Assert.Equal(SelfUpdateOutcome.DownloadFailed, outcome);
-        Assert.Equal(0, serverClient.DownloadCallCount);
-        Assert.Equal(0, applier.ApplyCallCount);
+        Assert.Equal(SelfUpdateOutcome.Applied, outcome);
+        Assert.Equal("/api/agent/updates/payload.exe", serverClient.LastDownloadUrl);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_never_fetches_a_protocol_relative_URL_verbatim()
+    {
+        // A protocol-relative reference ("//host/path", no scheme) is
+        // exactly the kind of URL-parsing edge case a blacklist check on
+        // the raw string can miss — confirmed by hand: resolving
+        // "//attacker.example/x" against a real base URI replaces the
+        // authority and keeps only the base's scheme, redirecting to the
+        // foreign host entirely, yet Uri.TryCreate(..., UriKind.Absolute, ...)
+        // on the bare string alone reports a non-empty Host too (parsed as
+        // "file://attacker.example/..."), so either shape of blacklist
+        // check is a game of enumerating cases. The fix doesn't need to
+        // enumerate anything, since it never fetches the original string
+        // in the first place.
+        var (serverClient, _, service) = CreateService();
+        var maliciousAsset = SampleAsset with { DownloadUrl = "//attacker.example/payload.exe" };
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+
+        var outcome = await service.ApplyAsync(offer);
+
+        Assert.Equal(SelfUpdateOutcome.Applied, outcome);
+        Assert.Equal("/api/agent/updates/payload.exe", serverClient.LastDownloadUrl);
     }
 
     [Fact]

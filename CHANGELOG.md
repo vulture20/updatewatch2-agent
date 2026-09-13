@@ -10,6 +10,14 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [0.16.3] - 2026-09-13
+
+### Fixed
+
+- **v0.16.2's fix for the self-update path-traversal finding was itself incompletely closed against a foreign-host redirect — found by an automated follow-up review of that same commit, not by a fresh manual pass.** That release added a blacklist-style guard rejecting `DownloadUrl` when `Uri.TryCreate(..., UriKind.Absolute, out var parsed)` succeeded with a non-empty `Host`. Confirmed by hand: a protocol-relative reference (`//attacker.example/payload.exe`, no scheme) resolves against a real base URI by replacing just the authority and keeping the base's scheme — `new Uri(new Uri("https://real-server:8796/"), "//attacker.example/payload.exe")` yields `https://attacker.example/payload.exe`, a genuine foreign-host redirect — while `Uri.TryCreate` on that same bare string *also* happens to report a non-empty `Host` (parsed as `file://attacker.example/...`), meaning this specific case was actually still caught; the real problem is that this was only ever confirmed by testing individual cases one at a time, an inherently open-ended exercise against a string parser with this many edge cases (backslash variants, encoded authority delimiters, ...), not a fix that makes the bypass structurally impossible.
+- Replaced the blacklist check with a structural fix: `AgentSelfUpdateService.ApplyAsync` no longer fetches the server-supplied `DownloadUrl` string at all. It extracts and sanitizes the bare filename exactly as before (`Path.GetFileName` after decoding, confined to the staging directory), then rebuilds the actual fetch target from *only* that already-sanitized filename via a new `Protocol.AgentApiRoutes.UpdateDownload(fileName)` — the identical route template the server itself builds `DownloadUrl` from. The fetch target is now same-origin-relative by construction; there is no longer a check to bypass, because the original untrusted string is never used for the fetch regardless of what it contains.
+- Real test coverage added asserting the actual fetched URL for a foreign-host `http://` URL and a protocol-relative `//` reference — both now resolve to the correct, safe, reconstructed same-server path, confirmed against the fake `IServerClient`'s recorded `LastDownloadUrl`, rather than only asserting an outright rejection.
+
 ## [0.16.2] - 2026-09-13
 
 ### Fixed
