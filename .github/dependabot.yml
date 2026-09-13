@@ -1,0 +1,13 @@
+# Keeps the commit-SHA-pinned GitHub Actions in .github/workflows/*.yml
+# (updatewatch2-agent#15 — pinning by SHA instead of a mutable version tag
+# closes the supply-chain risk, but only Dependabot bumping those SHAs on
+# a real upstream release keeps them from silently going stale afterward)
+# up to date via PRs, without reintroducing the mutable-tag risk itself —
+# Dependabot updates the pinned SHA and its trailing "# vX.Y.Z" comment
+# together, it never switches an entry back to a bare tag.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
