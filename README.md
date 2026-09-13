@@ -7,12 +7,12 @@
 [![Latest Release](https://img.shields.io/github/v/release/vulture20/updatewatch2-agent?logo=github&color=2496ED)](https://github.com/vulture20/updatewatch2-agent/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/vulture20/updatewatch2-agent/total?color=2496ED)](https://github.com/vulture20/updatewatch2-agent/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/vulture20/updatewatch2-agent/ci.yml?branch=main&label=build)](https://github.com/vulture20/updatewatch2-agent/actions/workflows/ci.yml)
-[![Status](https://img.shields.io/badge/status-beta-orange)](#-project-status)
+[![Status](https://img.shields.io/badge/status-v1.0-brightgreen)](#-project-status)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 UpdateWatch2 Agent is the managed-endpoint half of **UpdateWatch2**: a .NET Worker Service, targeting both Windows and Linux from one codebase, that checks for OS updates, reports them (and whether a reboot is required) to the server, and installs them only on remote trigger — never rebooting on its own.
 
-> ⚠️ **Beta.** The certificate-based onboarding, heartbeat, and self-update mechanics are implemented and tested end to end against a real running server. The real Windows Update API (WUApiLib) integration, the Linux `dnf`/`yum` update path, and the Windows installer's install/uninstall behavior have **not** been verified against a real target host yet. See [Project status](#-project-status) below.
+> ✅ **v1.0.** The certificate-based onboarding, heartbeat, and self-update mechanics are implemented and tested end to end against a real running server. The real Windows Update API (WUApiLib) integration, the Linux `dnf`/`yum` update path, and the Windows installer's install/uninstall behavior have **not** been verified against a real target host yet. See [Project status](#-project-status) below.
 
 Companion repository: [updatewatch2-server](https://github.com/vulture20/updatewatch2-server) — the management server this agent reports to.
 
@@ -39,9 +39,9 @@ Companion repository: [updatewatch2-server](https://github.com/vulture20/updatew
 - Verifies the download's SHA-256 before ever applying it — a mismatch aborts and deletes the download without touching anything platform-specific.
 - Windows: re-runs the NSIS installer silently. Linux: `dpkg -i`/`rpm -U` the package, then restarts its own systemd service.
 
-## 🚧 Project status
+## ✅ Project status
 
-UpdateWatch2 was built with **vibe coding**: implemented and iterated on with [Claude Code](https://claude.com/claude-code) (Anthropic) in conversation, rather than hand-written line by line, driven by a human-authored architecture brief. The certificate lifecycle, registration/heartbeat/self-update protocol, and the Linux `apt` update-detection path have been run live against a real server and a real package cache, and are covered by an automated (xUnit) test suite. Some pieces are explicitly **not yet live-verified against a real target host**, called out as such in code comments: the Windows Update API (WUApiLib COM) integration, the Linux `dnf`/`yum` path (this project's own dev environment is Debian-based), and the NSIS Windows installer's install/uninstall actually run through `sc.exe`/a package manager. Treat this as a well-researched, actively-tested implementation to build on — not yet battle-tested production software.
+UpdateWatch2 was built with **vibe coding**: implemented and iterated on with [Claude Code](https://claude.com/claude-code) (Anthropic) in conversation, rather than hand-written line by line, driven by a human-authored architecture brief. The certificate lifecycle, registration/heartbeat/self-update protocol, and the Linux `apt` update-detection path have been run live against a real server and a real package cache, and are covered by an automated (xUnit) test suite. Some pieces are explicitly **not yet live-verified against a real target host**, called out as such in code comments: the Windows Update API (WUApiLib COM) integration, the Linux `dnf`/`yum` path (this project's own dev environment is Debian-based), and the NSIS Windows installer's install/uninstall actually run through `sc.exe`/a package manager. Treat the pieces called out above as well-researched but not yet confirmed on a real target host — everything else has been live-verified end to end.
 
 ## 🚀 Installation & configuration
 

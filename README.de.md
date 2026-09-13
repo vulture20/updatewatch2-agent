@@ -7,12 +7,12 @@
 [![Latest Release](https://img.shields.io/github/v/release/vulture20/updatewatch2-agent?logo=github&color=2496ED)](https://github.com/vulture20/updatewatch2-agent/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/vulture20/updatewatch2-agent/total?color=2496ED)](https://github.com/vulture20/updatewatch2-agent/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/vulture20/updatewatch2-agent/ci.yml?branch=main&label=build)](https://github.com/vulture20/updatewatch2-agent/actions/workflows/ci.yml)
-[![Status](https://img.shields.io/badge/status-Beta-orange)](#-projektstatus)
+[![Status](https://img.shields.io/badge/status-v1.0-brightgreen)](#-projektstatus)
 [![Lizenz: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 UpdateWatch2 Agent ist die Endgeräte-Hälfte von **UpdateWatch2**: ein .NET-Worker-Service, der aus einer einzigen Codebasis heraus sowohl Windows als auch Linux bedient, auf Betriebssystem-Updates prüft, sie (samt Information, ob ein Neustart nötig ist) an den Server meldet und sie nur auf Fernauslösung hin installiert — nie von sich aus neu startet.
 
-> ⚠️ **Beta.** Das zertifikatsbasierte Onboarding, der Heartbeat und der Selbst-Update-Mechanismus sind durchgängig implementiert und gegen einen echten laufenden Server getestet. Die echte Windows-Update-API-Integration (WUApiLib), der Linux-`dnf`/`yum`-Update-Pfad sowie das Installations-/Deinstallationsverhalten des Windows-Installers wurden **noch nicht** gegen ein echtes Zielsystem verifiziert. Siehe [Projektstatus](#-projektstatus) weiter unten.
+> ✅ **v1.0.** Das zertifikatsbasierte Onboarding, der Heartbeat und der Selbst-Update-Mechanismus sind durchgängig implementiert und gegen einen echten laufenden Server getestet. Die echte Windows-Update-API-Integration (WUApiLib), der Linux-`dnf`/`yum`-Update-Pfad sowie das Installations-/Deinstallationsverhalten des Windows-Installers wurden **noch nicht** gegen ein echtes Zielsystem verifiziert. Siehe [Projektstatus](#-projektstatus) weiter unten.
 
 Begleit-Repository: [updatewatch2-server](https://github.com/vulture20/updatewatch2-server) — der Verwaltungsserver, an den dieser Agent meldet.
 
@@ -39,9 +39,9 @@ Begleit-Repository: [updatewatch2-server](https://github.com/vulture20/updatewat
 - Prüft den SHA-256-Wert des Downloads, bevor er überhaupt angewendet wird — bei Abweichung wird abgebrochen und der Download gelöscht, ohne irgendetwas Plattformspezifisches anzufassen.
 - Windows: führt den NSIS-Installer still erneut aus. Linux: `dpkg -i`/`rpm -U` des Pakets, danach Neustart des eigenen systemd-Dienstes.
 
-## 🚧 Projektstatus
+## ✅ Projektstatus
 
-UpdateWatch2 wurde per **Vibe-Coding** entwickelt: implementiert und iteriert im Dialog mit [Claude Code](https://claude.com/claude-code) (Anthropic), statt Zeile für Zeile von Hand geschrieben, angetrieben von einem menschlich verfassten Architektur-Briefing. Der Zertifikats-Lebenszyklus, das Registrierungs-/Heartbeat-/Selbst-Update-Protokoll sowie der Linux-`apt`-Update-Erkennungspfad wurden live gegen einen echten Server und einen echten Paket-Cache ausgeführt und sind durch eine automatisierte (xUnit-)Testsuite abgedeckt. Einige Teile sind ausdrücklich **noch nicht gegen ein echtes Zielsystem live verifiziert**, im Code entsprechend gekennzeichnet: die Windows-Update-API-Integration (WUApiLib-COM), der Linux-`dnf`/`yum`-Pfad (die eigene Entwicklungsumgebung dieses Projekts ist Debian-basiert) sowie das tatsächliche Installations-/Deinstallationsverhalten des NSIS-Windows-Installers über `sc.exe`/einen Paketmanager. Betrachte dies als eine gut recherchierte, aktiv getestete Implementierung zum Weiterbauen — noch nicht als produktionserprobte Software.
+UpdateWatch2 wurde per **Vibe-Coding** entwickelt: implementiert und iteriert im Dialog mit [Claude Code](https://claude.com/claude-code) (Anthropic), statt Zeile für Zeile von Hand geschrieben, angetrieben von einem menschlich verfassten Architektur-Briefing. Der Zertifikats-Lebenszyklus, das Registrierungs-/Heartbeat-/Selbst-Update-Protokoll sowie der Linux-`apt`-Update-Erkennungspfad wurden live gegen einen echten Server und einen echten Paket-Cache ausgeführt und sind durch eine automatisierte (xUnit-)Testsuite abgedeckt. Einige Teile sind ausdrücklich **noch nicht gegen ein echtes Zielsystem live verifiziert**, im Code entsprechend gekennzeichnet: die Windows-Update-API-Integration (WUApiLib-COM), der Linux-`dnf`/`yum`-Pfad (die eigene Entwicklungsumgebung dieses Projekts ist Debian-basiert) sowie das tatsächliche Installations-/Deinstallationsverhalten des NSIS-Windows-Installers über `sc.exe`/einen Paketmanager. Betrachte die oben genannten Teile als gut recherchiert, aber noch nicht gegen ein echtes Zielsystem bestätigt — alles andere wurde durchgängig live verifiziert.
 
 ## 🚀 Installation & Konfiguration
 

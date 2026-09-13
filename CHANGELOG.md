@@ -4,11 +4,19 @@ All notable changes to the UpdateWatch2 Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [SemVer](https://semver.org/), starting at `0.x.x`
-(beta) per the project's CLAUDE.md. This file tracks the **agent**
+(beta) per the project's CLAUDE.md and reaching `1.0.0` — ending the beta
+phase — at the user's explicit request. This file tracks the **agent**
 version specifically — one of CLAUDE.md's four independent version
 numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
+
+## [1.0.0] - 2026-09-13
+
+### Changed
+
+- **Ends the beta phase, at the user's explicit request ("Ich würde die Beta-Phase gern beenden. Kannst du alle Versionen auf v1.0.0 setzen?").** This repo's agent version (`VERSION`, `AgentVersion.cs`) and transfer-protocol version (`Protocol/ProtocolVersion.cs`) both move to `1.0.0`, matched by the server repo's own server, protocol, and DB-schema versions moving to `1.0.0` too — all four of CLAUDE.md's independently-tracked version numbers reaching this milestone together, deliberately overriding the normal "these evolve independently" rule for this one occasion.
+- README.md/README.de.md no longer describe the project as "Beta" — the status badge and callout now read `v1.0`/`✅`. The substantive caveats those callouts already carried (the real Windows Update API integration, the Linux `dnf`/`yum` update path, and the Windows installer's install/uninstall behavior not yet verified against a real target host) are unchanged and still called out explicitly — reaching `1.0.0` is a versioning/maturity milestone, not a claim that those specific, honestly-flagged gaps have been closed.
 
 ## [0.16.3] - 2026-09-13
 
