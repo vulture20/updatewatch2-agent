@@ -313,14 +313,9 @@ catch (OperationCanceledException)
     // WaitForShutdownAsync -> RunAsync -> Run -> Main). The service was
     // already stopping when this happens — that is the whole reason this
     // exception exists in the first place — so there is nothing to
-    // recover here, just exit instead of crashing. host.Services is
-    // already disposed by this point (RunAsync's own finally block runs
-    // before this exception reaches here), so this can't go through the
-    // app's normal DI-backed logging pipeline — write directly to the
-    // Windows Event Log instead, matching the SourceName the EventLog
-    // logging provider above is already registered under, so it still
-    // shows up grouped with this agent's other log entries in Event
-    // Viewer.
+    // recover here, just exit (implicit code 0) instead of crashing. A
+    // clean exit is deliberately correct for this specific, already-
+    // diagnosed case, unlike the general Exception branch below.
     if (OperatingSystem.IsWindows())
     {
         EventLog.WriteEntry(
@@ -328,6 +323,44 @@ catch (OperationCanceledException)
             "Shutdown did not complete within the configured timeout; exiting without a clean stop instead of crashing.",
             EventLogEntryType.Warning);
     }
+}
+catch (Exception ex)
+{
+    // Broadened from the OperationCanceledException-only catch above after
+    // a real incident: that catch protects against exactly one known,
+    // already-diagnosed exception type escaping host.Run()'s shutdown
+    // path, but any OTHER exception type there was — and without this
+    // branch, still would be — completely unprotected, crashing the
+    // process the same way. Deliberately a SEPARATE catch from the one
+    // above, not folded into it, because the right response differs: an
+    // unanticipated exception here must still exit with a NONZERO code
+    // (Environment.ExitCode, set below), not silently exit 0 the way the
+    // known-benign OperationCanceledException case does. Both
+    // installer/linux/updatewatch2-agent.service's Restart=on-failure and
+    // installer/nsis/setup.nsi's `sc.exe failure ... actions=restart/...`
+    // only recover a process that exits nonzero or terminates abnormally —
+    // never one that exits cleanly. Uniformly reusing the OCE branch's
+    // "log and exit 0" behavior here would silently disable that recovery
+    // for a genuinely unexpected crash, the same class of "self-update's
+    // own process-replacement mechanics quietly break the OS's recovery
+    // mechanism" problem this whole area of the code exists to avoid.
+    // host.Services is already disposed by this point (RunAsync's own
+    // finally block runs before any exception reaches here), so this
+    // can't go through the app's normal DI-backed logging pipeline either
+    // — same direct-to-Event-Log approach as the branch above, but at
+    // Error (not Warning) level, since this is by definition unexpected,
+    // and including the actual exception details, since unlike the OCE
+    // case there's no fixed, already-understood explanation to fall back
+    // on.
+    if (OperatingSystem.IsWindows())
+    {
+        EventLog.WriteEntry(
+            "UpdateWatch2 Agent",
+            $"Unhandled exception escaped host.Run(): {ex.GetType().FullName}: {ex.Message}{Environment.NewLine}{ex.StackTrace}",
+            EventLogEntryType.Error);
+    }
+
+    Environment.ExitCode = 1;
 }
 
 static string MapLogLevel(string value) => value.Trim().ToUpperInvariant() switch

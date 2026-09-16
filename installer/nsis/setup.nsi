@@ -57,6 +57,24 @@
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\UpdateWatch2Agent"
 !define CONFIG_KEY "SOFTWARE\UpdateWatch2\Agent"
 
+; Bounds for the service-state poll loops in SEC_MAIN/Uninstall below —
+; replaced a fixed `Sleep 1000` after a real incident: a self-update whose
+; old process didn't release its file handle in time (it crashed instead of
+; exiting cleanly) left the File instruction failing silently in /S mode,
+; aborting the script between the already-executed `sc delete` and the
+; never-reached `sc create` — service deleted, never recreated, requiring
+; manual intervention. 60s for the stop-poll is deliberate, not arbitrary:
+; Program.cs sets HostOptions.ShutdownTimeout to 30s, so this gives real
+; margin over that figure (SCM's own stop handshake adds a bit on top of
+; the app's own shutdown) while still being a bounded, finite wait rather
+; than an open-ended one. 10s for the start-poll is generous since starting
+; is just process launch + the host entering its run loop, no COM/shutdown-
+; drain concerns like stopping has.
+!define STOP_POLL_INTERVAL_MS 500
+!define STOP_POLL_MAX_RETRIES 120
+!define START_POLL_INTERVAL_MS 500
+!define START_POLL_MAX_RETRIES 20
+
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "nsDialogs.nsh"
@@ -88,6 +106,10 @@ Var ServerPort
 Var ServerAddressField
 Var ServerPortField
 Var CaCertPath
+; Handle for $INSTDIR\install.log, opened in SEC_MAIN — see that Section's
+; own comments for why a silent (/S) install needs its own persistent
+; diagnostic trail.
+Var LogFileHandle
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "..\..\LICENSE"
@@ -149,6 +171,19 @@ Function .onInit
   ${IfNot} ${Errors}
     StrCpy $CaCertPath $0
   ${EndIf}
+FunctionEnd
+
+; Belt-and-suspenders safety net for the class of failure SEC_MAIN's own
+; stop-poll/reorder-delete logic below already works hard to avoid: if the
+; install still aborts for any reason, make one more best-effort attempt to
+; start the service back up, in case an earlier best-effort restart (e.g.
+; the stop-poll timeout branch) didn't fire, or this is a different failure
+; path entirely. Exit code ignored — a no-op if there's no service to
+; restart, and there is nothing further to fall back to from here anyway.
+Function .onInstFailed
+  SetRegView 64
+  nsExec::ExecToLog 'sc.exe start "${SERVICE_NAME}"'
+  Pop $0
 FunctionEnd
 
 ; ---------------------------------------------------------------------
@@ -214,13 +249,62 @@ Section "UpdateWatch2 Agent" SEC_MAIN
   SetShellVarContext all
   SetOutPath "$INSTDIR"
 
-  ; Existing service, if any (upgrade case) — stop and remove before
-  ; overwriting its binary, which a running Windows service holds locked.
-  nsExec::ExecToLog 'sc.exe stop "${SERVICE_NAME}"'
+  ; Diagnostic trail for this Section's stop/upgrade/recreate sequence — a
+  ; silent (/S) install has no other visible output, so this is the actual
+  ; record of what happened for any future incident. Append mode, not
+  ; overwrite, so it accumulates a history across upgrades.
+  FileOpen $LogFileHandle "$INSTDIR\install.log" a
+
+  ; Existing service, if any (upgrade case) — stop it and WAIT for it to
+  ; actually reach STOPPED before touching its binary, rather than a fixed
+  ; Sleep. This is the real fix for a reported incident: a fixed 1-second
+  ; sleep was nowhere near enough when the old process crashed instead of
+  ; exiting cleanly (or just legitimately needed up to
+  ; HostOptions.ShutdownTimeout's own 30s) — the File instruction below
+  ; aborts hard and silently (no dialog in /S mode) if its target is still
+  ; locked when it runs, which is exactly what left the service
+  ; deleted-but-not-recreated in that incident (the old `sc delete` used to
+  ; run unconditionally, before this wait, and before the File copy).
+  nsExec::ExecToLog 'sc.exe query "${SERVICE_NAME}"'
   Pop $0
-  Sleep 1000
-  nsExec::ExecToLog 'sc.exe delete "${SERVICE_NAME}"'
-  Pop $0
+  ${If} $0 == 0
+    nsExec::ExecToLog 'sc.exe stop "${SERVICE_NAME}"'
+    Pop $0
+    FileWrite $LogFileHandle "sc.exe stop exit code: $0$\r$\n"
+
+    StrCpy $R0 0
+    StrCpy $R1 0
+    ${Do}
+      nsExec::ExecToLog 'cmd.exe /C sc.exe query "${SERVICE_NAME}" | find "STATE" | find "STOPPED"'
+      Pop $0
+      ${If} $0 == 0
+        ${ExitDo}
+      ${EndIf}
+      IntOp $R0 $R0 + 1
+      ${If} $R0 >= ${STOP_POLL_MAX_RETRIES}
+        StrCpy $R1 1
+        ${ExitDo}
+      ${EndIf}
+      Sleep ${STOP_POLL_INTERVAL_MS}
+    ${Loop}
+
+    ${If} $R1 == 1
+      ; Timed out waiting for the old service to stop — abort BEFORE the
+      ; File instruction below, instead of letting it fail on its own
+      ; (which would happen too late, after `sc delete` had already run).
+      ; Best-effort restart the still-present old service first, so a
+      ; timeout here doesn't itself leave the agent down.
+      FileWrite $LogFileHandle "ERROR: service did not reach STOPPED within $R0 retries — aborting before touching the binary. Restarting the previous version.$\r$\n"
+      nsExec::ExecToLog 'sc.exe start "${SERVICE_NAME}"'
+      Pop $0
+      FileWrite $LogFileHandle "Best-effort restart of the previous version, exit code: $0$\r$\n"
+      FileClose $LogFileHandle
+      Abort "UpdateWatch2 Agent upgrade aborted: the existing service did not stop in time. The previous version has been left running. See $INSTDIR\install.log."
+    ${EndIf}
+    FileWrite $LogFileHandle "Service confirmed STOPPED.$\r$\n"
+  ${Else}
+    FileWrite $LogFileHandle "No existing service found — fresh install, skipping stop/wait.$\r$\n"
+  ${EndIf}
 
   File "${PUBLISH_DIR}\UpdateWatch2.Agent.exe"
   File "${PUBLISH_DIR}\appsettings.json"
@@ -256,14 +340,59 @@ Section "UpdateWatch2 Agent" SEC_MAIN
   ${EndIf}
   WriteRegStr HKLM "${CONFIG_KEY}" "InstallDir" "$INSTDIR"
 
+  ; Only now — after the new binary is already safely copied above — remove
+  ; the old service registration and recreate it. Deliberately reordered
+  ; from before the file copy: if that copy had somehow still failed
+  ; despite the stop-and-wait above, the OLD service registration would
+  ; still exist at this point, degrading to "old version, stopped, but
+  ; still registered" (self-heals on the next reboot via its own
+  ; start= auto) instead of "no service at all" — the actual failure mode
+  ; the incident this fix addresses hit.
+  FileWrite $LogFileHandle "Recreating service registration.$\r$\n"
+  nsExec::ExecToLog 'sc.exe delete "${SERVICE_NAME}"'
+  Pop $0
+  FileWrite $LogFileHandle "sc.exe delete exit code: $0$\r$\n"
+
   nsExec::ExecToLog 'sc.exe create "${SERVICE_NAME}" binPath= "$INSTDIR\UpdateWatch2.Agent.exe" start= auto DisplayName= "${SERVICE_NAME}" obj= LocalSystem'
   Pop $0
+  FileWrite $LogFileHandle "sc.exe create exit code: $0$\r$\n"
+  ${If} $0 != 0
+    FileWrite $LogFileHandle "ERROR: sc.exe create failed — no service exists, though the new binary is already in place at $INSTDIR.$\r$\n"
+    FileClose $LogFileHandle
+    Abort "UpdateWatch2 Agent upgrade aborted: failed to recreate the service (sc.exe exit code $0). See $INSTDIR\install.log."
+  ${EndIf}
+
   nsExec::ExecToLog 'sc.exe description "${SERVICE_NAME}" "Checks for and reports Windows updates to the UpdateWatch2 server; installs updates on remote trigger. See https://github.com/vulture20/updatewatch2-agent"'
   Pop $0
   nsExec::ExecToLog 'sc.exe failure "${SERVICE_NAME}" reset= 86400 actions= restart/10000/restart/60000/restart/60000'
   Pop $0
   nsExec::ExecToLog 'sc.exe start "${SERVICE_NAME}"'
   Pop $0
+  FileWrite $LogFileHandle "sc.exe start exit code: $0$\r$\n"
+
+  ; Confirm the service actually reaches RUNNING — a real but lower-severity
+  ; issue than the stop-timeout case above: by this point the service
+  ; already exists and a start was already requested, so there is nothing
+  ; left to undo by aborting the script; just log clearly so a stuck start
+  ; is diagnosable instead of silently unnoticed.
+  StrCpy $R0 0
+  ${Do}
+    nsExec::ExecToLog 'cmd.exe /C sc.exe query "${SERVICE_NAME}" | find "STATE" | find "RUNNING"'
+    Pop $0
+    ${If} $0 == 0
+      FileWrite $LogFileHandle "Service confirmed RUNNING after upgrade.$\r$\n"
+      ${ExitDo}
+    ${EndIf}
+    IntOp $R0 $R0 + 1
+    ${If} $R0 >= ${START_POLL_MAX_RETRIES}
+      FileWrite $LogFileHandle "WARNING: service was created and started, but did not reach RUNNING within $R0 retries.$\r$\n"
+      ${ExitDo}
+    ${EndIf}
+    Sleep ${START_POLL_INTERVAL_MS}
+  ${Loop}
+
+  FileWrite $LogFileHandle "Install/upgrade completed.$\r$\n"
+  FileClose $LogFileHandle
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -283,7 +412,28 @@ Section "Uninstall"
 
   nsExec::ExecToLog 'sc.exe stop "${SERVICE_NAME}"'
   Pop $0
-  Sleep 1000
+
+  ; Same real-poll-instead-of-fixed-sleep fix as SEC_MAIN's upgrade path
+  ; above (see that Section's own comments for the incident this addresses)
+  ; — lower severity here since there's no file to copy over a still-locked
+  ; binary, only the Delete calls below; this just gives the old process a
+  ; real chance to exit before those run, instead of a fixed 1 second.
+  ; Proceeds with cleanup regardless of whether the poll times out — an
+  ; uninstall shouldn't abort partway and leave more behind, not less.
+  StrCpy $R0 0
+  ${Do}
+    nsExec::ExecToLog 'cmd.exe /C sc.exe query "${SERVICE_NAME}" | find "STATE" | find "STOPPED"'
+    Pop $0
+    ${If} $0 == 0
+      ${ExitDo}
+    ${EndIf}
+    IntOp $R0 $R0 + 1
+    ${If} $R0 >= ${STOP_POLL_MAX_RETRIES}
+      ${ExitDo}
+    ${EndIf}
+    Sleep ${STOP_POLL_INTERVAL_MS}
+  ${Loop}
+
   nsExec::ExecToLog 'sc.exe delete "${SERVICE_NAME}"'
   Pop $0
 
