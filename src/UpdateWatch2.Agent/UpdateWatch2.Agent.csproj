@@ -42,6 +42,25 @@
          behavior on by default. -->
     <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../../VERSION').Trim())</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- Without this, a self-contained Linux publish still dynamically
+         loads the system's ICU library at startup and hard-crashes
+         (Environment.FailFast, "Couldn't find a valid ICU package
+         installed on the system") on any host that doesn't already have
+         one — confirmed by a real user report right after installing the
+         .deb on a fresh system; installing libicu76 by hand worked around
+         it, but that's a distro- and version-specific package name (a
+         different distro/release needs a different one — libicu72,
+         libicu70, libicu67, icu-libs, ...), not something this project
+         should require an admin to chase down by hand. This agent has no
+         actual need for culture-aware formatting/comparison in the first
+         place (confirmed: no non-Ordinal/non-Invariant string comparison,
+         culture-sensitive ToUpper/ToLower, or culture-formatted ToString
+         call anywhere in this codebase), so Invariant Globalization Mode
+         — .NET's own standard, documented answer for exactly this class
+         of headless-service deployment — removes the ICU dependency
+         entirely rather than trying to satisfy it. Applies to the Windows
+         build too, with no behavioral difference there either. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

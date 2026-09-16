@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.6] - 2026-09-16
+
+### Fixed
+
+- **The Linux agent crashed on startup on a fresh host with no ICU library installed, printing "Couldn't find a valid ICU package installed on the system" and `Environment.FailFast`ing out of `System.Globalization.CultureInfo`'s static initializer — reported by the user directly, having worked around it by manually installing `libicu76`.** A self-contained publish still dynamically loads the *system's* ICU library at startup unless told otherwise; the exact package name needed (`libicu76`, `libicu72`, `libicu70`, `libicu67`, `icu-libs`, ...) varies by distro and release, so there's no single `Depends:` this project's `.deb`/`.rpm` packaging could declare that would be correct on every target. Fixed instead by enabling `<InvariantGlobalization>true</InvariantGlobalization>` in `UpdateWatch2.Agent.csproj` — .NET's own standard, documented answer for exactly this class of headless-service deployment — which removes the ICU dependency entirely rather than trying to satisfy it. Confirmed safe for this codebase specifically, not just in general: grepped for every non-`Ordinal`/non-`Invariant` string comparison, culture-sensitive `ToUpper`/`ToLower`, and culture-formatted `ToString` call — none exist anywhere in this codebase, so Invariant mode changes nothing observable here. Live-verified in this session (not just reasoned about): published self-contained for `linux-x64`, confirmed `runtimeconfig.json` actually carries `"System.Globalization.Invariant": true`, and ran the resulting binary for real, confirming it starts and stays up cleanly with no error output. The specific "ICU genuinely absent" crash itself was not re-reproduced in this session's sandbox (it already has several ICU versions installed) — Invariant Globalization Mode's effect of skipping the ICU P/Invoke calls entirely at CLR startup is a structural, well-established .NET runtime guarantee rather than something that needs an ICU-less environment to re-confirm, but flagging the gap honestly rather than claiming more than was actually observed.
+
 ## [1.0.5] - 2026-09-16
 
 ### Fixed
