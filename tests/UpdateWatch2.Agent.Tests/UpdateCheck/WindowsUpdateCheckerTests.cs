@@ -36,6 +36,14 @@ public class WindowsUpdateCheckerTests
 
         Assert.Empty(actual.Updates);
         Assert.False(actual.RebootRequired);
+        // The check genuinely failed — this must be distinguishable from
+        // "searched and found nothing", or UpdateCheckWorker would report
+        // it to the server as if it were real data (a real incident:
+        // WUApiLib's own transient 0x8024401C right after a reboot used to
+        // silently wipe out whatever pending updates the server already
+        // knew about).
+        Assert.False(actual.Success);
+        Assert.Equal("simulated WUApiLib failure", actual.ErrorDetail);
     }
 
     [Fact]

@@ -25,7 +25,7 @@ public class LinuxUpdateChecker(ILinuxUpdateSession session, ILogger<LinuxUpdate
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Linux update search failed");
-            return new UpdateCheckResult(Updates: [], RebootRequired: false);
+            return UpdateCheckResult.Failed(ex.Message);
         }
     }
 

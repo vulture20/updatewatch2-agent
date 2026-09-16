@@ -28,7 +28,7 @@ public class WindowsUpdateChecker(IWindowsUpdateSession session, ILogger<Windows
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogError(ex, "Windows Update search failed");
-                return new UpdateCheckResult(Updates: [], RebootRequired: false);
+                return UpdateCheckResult.Failed(ex.Message);
             }
         }, ct);
 

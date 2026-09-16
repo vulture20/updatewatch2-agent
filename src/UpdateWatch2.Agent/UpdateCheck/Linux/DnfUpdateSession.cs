@@ -30,10 +30,13 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
         var checkUpdate = await ShellCommand.RunAsync(binary, ["-q", "check-update"], ct, logger: logger);
         if (checkUpdate.ExitCode != 0 && checkUpdate.ExitCode != UpdatesAvailableExitCode)
         {
-            logger.LogError(
-                "{Binary} check-update exited with code {ExitCode}: {StdErr}",
-                binary, checkUpdate.ExitCode, checkUpdate.StandardError.Trim());
-            return new UpdateCheckResult([], RebootRequired: await IsRebootRequiredAsync(binary, ct));
+            var stdErr = checkUpdate.StandardError.Trim();
+            logger.LogError("{Binary} check-update exited with code {ExitCode}: {StdErr}", binary, checkUpdate.ExitCode, stdErr);
+            // Success: false — the RebootRequired check that used to run
+            // here regardless is now skipped too, since a failed
+            // SearchForUpdatesAsync call is never reported to the server
+            // either way (see UpdateCheckResult's own doc comment).
+            return UpdateCheckResult.Failed($"{binary} check-update exited with code {checkUpdate.ExitCode}: {stdErr}");
         }
 
         var available = DnfOutputParser.ParseCheckUpdate(checkUpdate.StandardOutput);

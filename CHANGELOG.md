@@ -11,6 +11,13 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.7] - 2026-09-16
+
+### Fixed
+
+- **A failed update check used to be reported to the server identically to "genuinely found zero updates" — reported by the user directly (a `WindowsUpdateChecker` COMException, HRESULT `0x8024401C` — WUApiLib's own `WU_E_PT_HTTP_STATUS_REQUEST_TIMEOUT`, right after installing updates and rebooting — after which "the agent's status stopped updating").** `WindowsUpdateChecker.CheckAsync`/`LinuxUpdateChecker.CheckAsync`'s catch blocks, and `DnfUpdateSession.SearchForUpdatesAsync`'s own internal `check-update`-failure branch, all returned an empty `UpdateCheckResult` on failure — indistinguishable from a real search that genuinely found nothing. `UpdateCheckWorker.CheckAndReportNowAsync` had no way to tell the difference and dutifully reported it to the server every time, which — since the server merges/replaces an agent's pending-updates list against whatever was just reported — silently **wiped out any real pending updates the server already knew about and falsely cleared `RebootRequired`**, even though nothing had actually changed; the agent simply didn't know. Fixed with a new `UpdateCheckResult.Success`/`ErrorDetail` (default `Success = true`, so every existing genuine-result call site is unaffected) — a failed check now uses `UpdateCheckResult.Failed(...)`, and `CheckAndReportNowAsync` skips the report entirely when `Success` is false, logging a warning instead and leaving the server's last-known-good state — including `LastUpdateCheckAt` (v1.3.7), which now only advances on an actual successful report — untouched until a check genuinely succeeds again. A `LastUpdateCheckAt` that visibly stops moving is now itself the honest diagnostic signal an admin needs, rather than a silently-wrong "0 pending updates."
+- The specific WUA error reported (`0x8024401C`) is itself a transient network condition (Windows Update's own search request timing out — plausible right after a reboot, before the network is fully back up), not a bug in this agent's own code; this fix doesn't prevent that from happening, it prevents it from corrupting the server's picture of this agent's actual state when it does.
+
 ## [1.0.6] - 2026-09-16
 
 ### Fixed

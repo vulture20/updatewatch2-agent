@@ -60,6 +60,26 @@ public class UpdateCheckWorker(
     public async Task CheckAndReportNowAsync(CancellationToken ct = default)
     {
         var result = await updateChecker.CheckAsync(ct);
+        if (!result.Success)
+        {
+            // Deliberately not reported at all — a real production incident
+            // (0x8024401C, WUApiLib's own transient HTTP-request-timeout,
+            // right after a reboot before the network was fully back up)
+            // showed why: reporting this the same way as "genuinely zero
+            // updates" would silently wipe out whatever real pending
+            // updates the server already knew about and falsely clear
+            // RebootRequired, even though nothing has actually changed —
+            // this agent just doesn't currently know. Leaving the server's
+            // last-known-good state untouched (including LastUpdateCheckAt,
+            // which only advances on an actual successful report) is the
+            // honest choice — it self-corrects the moment a check succeeds
+            // again, same as every other self-healing signal in this
+            // codebase, and a LastUpdateCheckAt that visibly stops moving
+            // is itself the diagnostic signal an admin needs here.
+            logger.LogWarning("Skipping this update-check report — the check itself failed ({ErrorDetail}).", result.ErrorDetail);
+            return;
+        }
+
         await serverClient.ReportUpdatesAsync(
             new ReportUpdatesRequest(
                 result.Updates.Select(u => new ReportedUpdate(u.Title, u.PackageId, u.Description)).ToList(),

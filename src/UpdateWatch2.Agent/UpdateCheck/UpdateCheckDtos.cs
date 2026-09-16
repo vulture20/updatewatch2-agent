@@ -2,7 +2,29 @@ namespace UpdateWatch2.Agent.UpdateCheck;
 
 public record DetectedUpdate(string Title, string? PackageId, string? Description);
 
-public record UpdateCheckResult(IReadOnlyList<DetectedUpdate> Updates, bool RebootRequired);
+/// <summary>
+/// <see cref="Success"/> defaults to true so every existing positional call
+/// site (<c>new UpdateCheckResult(updates, rebootRequired)</c>) that
+/// genuinely found real data keeps compiling and behaving unchanged — only
+/// the failure paths need to opt into <see cref="Failed"/> explicitly.
+/// Added after a real production report: a search failure (e.g. WUApiLib's
+/// own transient "0x8024401C" HTTP-request-timeout right after a reboot,
+/// while the network wasn't fully back up yet) used to be reported to the
+/// server identically to "genuinely found zero updates" — <see cref="UpdateCheckWorker"/>
+/// had no way to tell the difference, so it dutifully reported an empty,
+/// misleadingly "all clear" result, silently wiping out whatever real
+/// pending updates the server already knew about and clearing
+/// RebootRequired even if a reboot genuinely was still needed. <see cref="Success"/>
+/// lets a caller skip reporting entirely on a failed check instead,
+/// leaving the server's last-known-good state untouched until a check
+/// actually succeeds again.
+/// </summary>
+public record UpdateCheckResult(IReadOnlyList<DetectedUpdate> Updates, bool RebootRequired, bool Success = true, string? ErrorDetail = null)
+{
+    /// <summary>The check itself failed — Updates/RebootRequired are meaningless placeholders, not "genuinely found nothing."</summary>
+    public static UpdateCheckResult Failed(string? errorDetail = null) =>
+        new([], RebootRequired: false, Success: false, ErrorDetail: errorDetail);
+}
 
 /// <summary>
 /// Outcome of <see cref="IUpdateChecker.InstallAsync"/> — kept a separate

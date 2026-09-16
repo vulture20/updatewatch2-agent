@@ -47,6 +47,26 @@ public class WorkerTests
     }
 
     [Fact]
+    public async Task UpdateCheckWorker_skips_reporting_when_the_check_itself_failed()
+    {
+        // The real bug this guards against: a failed check (e.g. WUApiLib's
+        // own transient 0x8024401C right after a reboot) used to be
+        // reported identically to "genuinely found zero updates", silently
+        // wiping out whatever pending updates the server already knew
+        // about and falsely clearing RebootRequired.
+        var reportCallCount = 0;
+        var checker = new FakeUpdateChecker(UpdateCheckResult.Failed("simulated search failure"));
+        var client = new FakeServerClient(onReportUpdates: _ => reportCallCount++);
+        var worker = new UpdateCheckWorker(
+            new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 10 },
+            checker, client, ReadyCertificateState(), NullLogger<UpdateCheckWorker>.Instance);
+
+        await worker.CheckAndReportNowAsync();
+
+        Assert.Equal(0, reportCallCount);
+    }
+
+    [Fact]
     public async Task UpdateCheckWorker_makes_no_calls_until_the_certificate_state_is_ready()
     {
         var certificateState = new AgentCertificateState();

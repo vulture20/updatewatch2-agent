@@ -36,6 +36,12 @@ public class LinuxUpdateCheckerTests
 
         Assert.Empty(actual.Updates);
         Assert.False(actual.RebootRequired);
+        // Must be distinguishable from "searched and found nothing", or
+        // UpdateCheckWorker would report it to the server as if it were
+        // real data — see WindowsUpdateCheckerTests' identical assertion
+        // for the real incident this guards against.
+        Assert.False(actual.Success);
+        Assert.Equal("simulated apt failure", actual.ErrorDetail);
     }
 
     [Fact]
