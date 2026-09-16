@@ -20,12 +20,29 @@ public class LinuxClientCertificateStore(string path = LinuxClientCertificateSto
     public void Save(byte[] pfxBytes)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, pfxBytes);
 
-        // Restricting this to owner-only is only actually meaningful once
-        // a real systemd unit runs this service as a dedicated non-root
-        // account — installer/linux/ doesn't exist yet, so that's a
-        // documented prerequisite gap, not silently assumed away.
+        // This file carries this agent's private key. A security review
+        // found that writing via File.WriteAllBytes then File.SetUnixFileMode
+        // afterward (as this used to) leaves a real TOCTOU window — between
+        // those two calls the file exists with whatever mode WriteAllBytes'
+        // own creation leaves it at (the process's default reduced by
+        // umask, commonly world-readable), not the intended owner-only
+        // mode. Creating the file with the restrictive mode already
+        // applied (FileStreamOptions.UnixCreateMode) closes that window
+        // entirely — see LinuxFileConfigStore.Save's identical fix for the
+        // same finding, including why the explicit SetUnixFileMode call
+        // below is still kept (a no-op here, but migrates a file an older
+        // binary already created with the wrong mode).
+        using (var stream = new FileStream(path, new FileStreamOptions
+        {
+            Mode = FileMode.Create,
+            Access = FileAccess.Write,
+            UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+        }))
+        {
+            stream.Write(pfxBytes);
+        }
+
         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 

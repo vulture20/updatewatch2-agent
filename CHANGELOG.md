@@ -13,6 +13,10 @@ change caused one, but this changelog isn't that changelog.
 
 ## [1.0.2] - 2026-09-16
 
+### Security
+
+- **Closed a TOCTOU window in `LinuxFileConfigStore.Save`/`LinuxClientCertificateStore.Save`, found by an automated security review.** Both used to write the file's full contents first (`File.WriteAllText`/`WriteAllBytes`) and only restrict its permissions to owner-only afterward (`File.SetUnixFileMode`) — between those two calls, the file briefly exists on disk with whatever mode its own creation leaves it at (the process's default reduced by umask, commonly world-readable, confirmed by hand: umask `0022` produces `644`), exposing the config file's `RegistrationToken` bearer secret or the client certificate's private key to any local user racing that window (e.g. an inotify watch on the directory). Fixed by creating the file with the restrictive mode already applied via `FileStreamOptions.UnixCreateMode`, closing the window entirely rather than narrowing it after the fact — the explicit `SetUnixFileMode` call is kept too, now a no-op on a freshly-created file, purely to migrate a file an older binary already created with the wrong mode. Existing test coverage (`LinuxFileConfigStoreTests`/`LinuxClientCertificateStoreTests`, asserting the final permission mode) still passes; a TOCTOU window itself isn't something a fast unit test can directly observe, so this rests on the fix's own reasoning plus that unchanged final-state coverage, not a new regression test.
+
 ### Changed
 
 - **README/README.de "Project status" badge and callout still said "v1.0" — at the user's explicit request, both now say "Stable"/"Stabil"** (mirrored in the server repo's own README pair too, which carries the identical badge).
