@@ -54,8 +54,12 @@ builder.Services.AddSingleton(agentOptions);
 // builder.Logging.SetMinimumLevel(...) alone does not reliably take effect
 // on a Generic-Host-style app, because Logging:LogLevel:* read reactively
 // from IConfiguration wins over it — writing the value directly into
-// configuration is what the console/EventLog providers' filter actually
-// respects.
+// configuration is what the console provider's filter actually respects.
+// NOT sufficient for the EventLog provider specifically, though — see the
+// dedicated override right after AddEventLog() below, added after a user
+// report that DEBUG-level messages (the COM/HTTP/shell/registry logging
+// added in v1.0.4) never reached Event Viewer even with LogLevel set to
+// DEBUG, which is what caught this comment's own claim being incomplete.
 var mappedLogLevel = MapLogLevel(agentOptions.LogLevel);
 builder.Configuration["Logging:LogLevel:Default"] = mappedLogLevel;
 if (Enum.TryParse<LogLevel>(mappedLogLevel, out var minLevel))
@@ -99,6 +103,37 @@ if (OperatingSystem.IsWindows())
         sp.GetRequiredService<IPlatformUpdateApplier>(),
         sp.GetRequiredService<ILogger<AgentSelfUpdateService>>()));
     builder.Logging.AddEventLog(new EventLogSettings { SourceName = "UpdateWatch2 Agent" });
+
+    // AddWindowsService() above auto-registers a hardcoded Warning-level
+    // floor filter specifically for EventLogLoggerProvider whenever the
+    // process is actually running as a Windows Service (a real, if obscure,
+    // Microsoft.Extensions.Hosting.WindowsServices behavior — meant to keep
+    // an ordinary app's routine Information/Debug chatter out of the shared
+    // Windows Event Log by default). That filter is scoped to this specific
+    // provider, which makes it MORE specific than — and therefore win over
+    // — this file's own generic Logging:LogLevel:Default write above,
+    // regardless of registration order; SetMinimumLevel() never touches a
+    // provider-specific rule at all. The practical effect, exactly as a
+    // user reported: LogLevel set to DEBUG in the registry, yet none of the
+    // new COM/HTTP/shell/registry DEBUG log lines (v1.0.4) ever appeared in
+    // Event Viewer — only Information and above ever could, no matter what
+    // LogLevel said. Overridden two ways for the same reason this
+    // codebase's other logging-precedence fixes use more than one
+    // mechanism when unsure which one actually wins in practice (server
+    // CLAUDE.md's AdminSettingsStore.Apply note): a configuration-bound
+    // rule (reactive to a later config change the same way the generic
+    // default already is) plus a code-level AddFilter<T> call registered
+    // after AddWindowsService()'s own, so "last rule of equal specificity
+    // wins" resolves in our favor even if the configuration-bound path
+    // somehow doesn't. NOT live-verified against a real Windows Event
+    // Viewer in this session (no Windows host available) — re-confirm a
+    // DEBUG-level message from this agent's own new COM/HTTP logging
+    // actually appears there before trusting this further.
+    builder.Configuration["Logging:EventLog:LogLevel:Default"] = mappedLogLevel;
+    if (Enum.TryParse<LogLevel>(mappedLogLevel, out var eventLogMinLevel))
+    {
+        builder.Logging.AddFilter<EventLogLoggerProvider>(level => level >= eventLogMinLevel);
+    }
 }
 else if (OperatingSystem.IsLinux())
 {

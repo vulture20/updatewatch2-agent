@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.8] - 2026-09-16
+
+### Fixed
+
+- **DEBUG-level log messages (including all of v1.0.4's new COM/HTTP/shell/registry logging) never reached Event Viewer, even with `LogLevel` set to `DEBUG` — reported by the user directly ("der Windows-Agent den LogLevel ignoriert... auch auf DEBUG liefert er keinerlei Einträge für die neuen COM-Logmeldungen").** Root cause: `Microsoft.Extensions.Hosting.WindowsServices`' `AddWindowsService()` auto-registers a hardcoded `Warning`-level floor filter scoped specifically to `EventLogLoggerProvider` whenever the process is actually running as a Windows Service — a real, if obscure, built-in .NET hosting behavior meant to keep routine chatter out of the shared Windows Event Log by default. Being provider-specific, that filter is *more specific than* — and so silently overrides — this agent's own generic `Logging:LogLevel:Default` write, regardless of registration order; `SetMinimumLevel()` never touches a provider-specific rule at all. The practical effect: only Information-and-above could ever reach Event Viewer from this agent, no matter what `LogLevel` was actually configured to. This also corrects this exact file's own prior claim ("writing the value directly into configuration is what the console/EventLog providers' filter actually respects") — true for the console provider, not for EventLog when running as a service, which is genuinely different from the server-side finding it was modeled on. Fixed two ways, deliberately redundant given the uncertainty of not being able to test this live: a configuration-bound `Logging:EventLog:LogLevel:Default` write (reactive the same way the generic default already is) plus a code-level `builder.Logging.AddFilter<EventLogLoggerProvider>(...)` call registered after `AddWindowsService()`'s own, so "last rule of equal specificity wins" resolves in our favor either way. **Not live-verified against a real Windows Event Viewer in this session** — same standing caveat this project already carries for everything else Windows-Event-Log-specific; re-confirm that a DEBUG-level message from this agent's own COM/HTTP logging actually appears in Event Viewer with `LogLevel=DEBUG` before trusting this further.
+
 ## [1.0.7] - 2026-09-16
 
 ### Fixed
