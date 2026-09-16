@@ -87,6 +87,8 @@ if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<IWindowsUpdateSession, WuaUpdateSession>();
     builder.Services.AddSingleton<IUpdateChecker, WindowsUpdateChecker>();
+    builder.Services.AddSingleton<IWindowsUpdatePolicyStore, WindowsRegistryUpdatePolicyStore>();
+    builder.Services.AddSingleton<WindowsUpdatePolicyEnforcer>();
     builder.Services.AddSingleton<IClientCertificateStore, WindowsClientCertificateStore>();
     builder.Services.AddSingleton<IPlatformUpdateApplier, WindowsInstallerApplier>();
     builder.Services.AddSingleton<IAgentRebooter, WindowsAgentRebooter>();
@@ -279,6 +281,17 @@ builder.Services.AddHostedService<HeartbeatWorker>();
 builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(30));
 
 var host = builder.Build();
+
+// Run once at startup, not on a recurring cadence like this agent's other
+// self-healing heartbeat-tied checks — see WindowsUpdatePolicyEnforcer's
+// own doc comment for why a service restart already provides enough of a
+// re-check cadence for this one. Guarded by its own try/catch internally,
+// so a failure here (e.g. no registry write permission for some reason)
+// can never prevent the agent itself from starting.
+if (OperatingSystem.IsWindows())
+{
+    host.Services.GetRequiredService<WindowsUpdatePolicyEnforcer>().EnsureNativeAutomaticUpdatesDisabled();
+}
 
 try
 {

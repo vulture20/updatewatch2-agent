@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.3] - 2026-09-16
+
+### Fixed
+
+- **Windows machines sometimes automatically rebooted after updates were installed, despite CLAUDE.md's explicit "update installation never triggers a reboot itself" rule — reported by the user directly ("Nach den Windows-Updates wird teilweise ein automatischer und unerwünschter Neustart durchgeführt").** Confirmed this agent's own code was not the cause: `WuaUpdateSession.DownloadAndInstall` never acts on `RebootRequired`, and neither the server nor this agent ever sets a pending reboot request except through an explicit admin action (`AgentsController.Reboot`). The actual cause is Windows' own separate, native "Automatic Updates" client — distinct from the Windows Update Agent (WUApiLib) COM API this agent uses directly to search/download/install — which runs independently by default and, per its own default consumer settings, can download, install, and reboot updates entirely on its own schedule regardless of what this agent does. Fixed by disabling that native client at the OS policy level (`HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU\NoAutoUpdate=1`, the standard, long-documented Group Policy equivalent of "Configure Automatic Updates: Disabled" — the same mechanism a WSUS- or Intune-managed fleet already relies on), applied once at agent startup via a new `WindowsUpdatePolicyEnforcer`. Does not affect the separate WUApiLib COM API this agent's own search/download/install already uses. If a domain Group Policy also manages this same key, that policy wins on its next refresh regardless of this local write — a no-op safety net in that case, not a conflict. Follows the same testable-orchestrator/untestable-OS-action split as `WindowsUpdateChecker`/`WuaUpdateSession` (`WindowsUpdatePolicyEnforcer` behind a new `IWindowsUpdatePolicyStore` seam, with real test coverage against a hand-written fake store on this project's Linux CI; the real registry-touching `WindowsRegistryUpdatePolicyStore` cannot be exercised there). **Not live-verified against a real Windows host** — same standing honesty caveat this file already carries for the rest of the WUApiLib integration; re-confirm on a real machine (native Automatic Updates genuinely disabled, this agent's own controlled install/reboot flow unaffected) before relying on this further.
+
 ## [1.0.2] - 2026-09-16
 
 ### Security
