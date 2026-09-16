@@ -90,6 +90,20 @@ public class PinnedServerCertificateValidatorTests : IDisposable
 
     private static (X509Certificate2 Root, X509Certificate2 Leaf) CreateCaAndLeaf(string sanHostname)
     {
+        // Captured once and reused for both certificates below — found by
+        // a real CI-only flake: computing DateTimeOffset.UtcNow separately
+        // for the root and then again for the leaf can straddle a second
+        // boundary between the two calls, and CertificateRequest.Create
+        // validates the leaf's requested notAfter against the *stored*
+        // (second-precision) issuer NotAfter — a leaf notAfter computed a
+        // few milliseconds after the root's could round up into the next
+        // second and exceed it, throwing "requested notAfter value ...
+        // is later than issuerCertificate.NotAfter". The root additionally
+        // gets a full extra day of margin over the leaf so the two can
+        // never collide regardless of rounding on either side.
+        var now = DateTimeOffset.UtcNow;
+        var notBefore = now.AddMinutes(-5);
+
         using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         // A unique Subject per call, not a fixed "CN=Test CA" — two roots
         // sharing an identical Subject can make X509Chain.Build() pick the
@@ -100,7 +114,7 @@ public class PinnedServerCertificateValidatorTests : IDisposable
         // actually testing.
         var rootRequest = new CertificateRequest($"CN=Test CA {Guid.NewGuid()}", rootKey, HashAlgorithmName.SHA256);
         rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
-        using var root = rootRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1));
+        using var root = rootRequest.CreateSelfSigned(notBefore, now.AddDays(2));
 
         using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var leafRequest = new CertificateRequest($"CN={sanHostname}", leafKey, HashAlgorithmName.SHA256);
@@ -108,7 +122,7 @@ public class PinnedServerCertificateValidatorTests : IDisposable
         sanBuilder.AddDnsName(sanHostname);
         leafRequest.CertificateExtensions.Add(sanBuilder.Build());
         using var leafPublicOnly = leafRequest.Create(
-            root, DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1), RandomNumberGenerator.GetBytes(16));
+            root, notBefore, now.AddDays(1), RandomNumberGenerator.GetBytes(16));
         using var leafWithKey = leafPublicOnly.CopyWithPrivateKey(leafKey);
 
         // Reload from exported bytes so the returned objects outlive the
