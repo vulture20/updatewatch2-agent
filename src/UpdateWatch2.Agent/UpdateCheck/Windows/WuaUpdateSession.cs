@@ -39,12 +39,14 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
 
     public UpdateCheckResult SearchForUpdates(CancellationToken ct)
     {
+        logger.LogDebug("COM: Microsoft.Update.Session.CreateUpdateSearcher().Search({Criteria})", SearchCriteria);
         dynamic searcher = CreateSession().CreateUpdateSearcher();
         ct.ThrowIfCancellationRequested();
         dynamic found = searcher.Search(SearchCriteria).Updates;
 
         var updates = new List<DetectedUpdate>();
         int count = found.Count;
+        logger.LogDebug("COM: search returned {Count} pending update(s).", count);
         for (var i = 0; i < count; i++)
         {
             dynamic update = found.Item(i);
@@ -62,6 +64,7 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         dynamic session = CreateSession();
         dynamic searcher = session.CreateUpdateSearcher();
         ct.ThrowIfCancellationRequested();
+        logger.LogDebug("COM: Microsoft.Update.Session.CreateUpdateSearcher().Search({Criteria})", SearchCriteria);
         dynamic pending = searcher.Search(SearchCriteria).Updates;
 
         // packageIds null: the original "install everything pending"
@@ -90,6 +93,10 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
             }
         }
 
+        logger.LogDebug(
+            "COM: {PendingCount} pending update(s) found, {SelectedCount} selected for install (packageIds={PackageIds}).",
+            pendingCount, selected.Count, packageIds is null ? "<all>" : string.Join(',', packageIds));
+
         if (selected.Count == 0)
         {
             logger.LogInformation("No pending Windows updates match what was requested to install.");
@@ -101,6 +108,7 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         {
             if (!(bool)update.EulaAccepted)
             {
+                logger.LogDebug("COM: accepting EULA for {Title}", (string)update.Title);
                 update.AcceptEula();
             }
 
@@ -108,6 +116,7 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         }
 
         ct.ThrowIfCancellationRequested();
+        logger.LogDebug("COM: Microsoft.Update.Session.CreateUpdateDownloader().Download() for {Count} update(s).", (int)toDownload.Count);
         dynamic downloader = session.CreateUpdateDownloader();
         downloader.Updates = toDownload;
         dynamic downloadResult = downloader.Download();
@@ -115,7 +124,9 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         dynamic toInstall = NewUpdateCollection();
         for (var i = 0; i < selected.Count; i++)
         {
-            if (IsSuccessCode((int)downloadResult.GetUpdateResult(i).ResultCode))
+            var resultCode = (int)downloadResult.GetUpdateResult(i).ResultCode;
+            logger.LogDebug("COM: download result code {ResultCode} for {Title}", resultCode, (string)selected[i].Title);
+            if (IsSuccessCode(resultCode))
             {
                 toInstall.Add(selected[i]);
             }
@@ -129,6 +140,7 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         }
 
         ct.ThrowIfCancellationRequested();
+        logger.LogDebug("COM: Microsoft.Update.Session.CreateUpdateInstaller().Install() for {Count} update(s).", downloadedCount);
         dynamic installer = session.CreateUpdateInstaller();
         installer.Updates = toInstall;
         installer.AllowSourcePrompts = false;
@@ -141,6 +153,7 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         dynamic installResult = installer.Install();
 
         int installCode = (int)installResult.ResultCode;
+        logger.LogDebug("COM: install ResultCode={ResultCode}", installCode);
         if (!IsSuccessCode(installCode))
         {
             logger.LogWarning("Windows Update install finished with result code {ResultCode} for {Count} update(s).", installCode, downloadedCount);
@@ -158,10 +171,12 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
     // and not worth reporting as an outright failed install.
     private static bool IsSuccessCode(int resultCode) => resultCode is 2 or 3;
 
-    private static bool IsRebootRequired()
+    private bool IsRebootRequired()
     {
         dynamic systemInfo = Activator.CreateInstance(Type.GetTypeFromProgID("Microsoft.Update.SystemInfo")!)!;
-        return (bool)systemInfo.RebootRequired;
+        bool rebootRequired = (bool)systemInfo.RebootRequired;
+        logger.LogDebug("COM: Microsoft.Update.SystemInfo.RebootRequired = {RebootRequired}", rebootRequired);
+        return rebootRequired;
     }
 
     private static dynamic CreateSession() =>

@@ -34,7 +34,7 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
 
     public async Task<UpdateCheckResult> SearchForUpdatesAsync(CancellationToken ct)
     {
-        var refresh = await ShellCommand.RunAsync("apt-get", ["-qq", "update"], ct);
+        var refresh = await ShellCommand.RunAsync("apt-get", ["-qq", "update"], ct, logger: logger);
         if (refresh.ExitCode != 0)
         {
             logger.LogWarning(
@@ -42,7 +42,7 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
                 refresh.ExitCode, refresh.StandardError.Trim());
         }
 
-        var listing = await ShellCommand.RunAsync("apt", ["list", "--upgradable"], ct);
+        var listing = await ShellCommand.RunAsync("apt", ["list", "--upgradable"], ct, logger: logger);
         var upgradable = AptOutputParser.ParseUpgradable(listing.StandardOutput);
 
         var updates = upgradable
@@ -98,7 +98,8 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
             "apt-get",
             args,
             ct,
-            extraEnvironment: new Dictionary<string, string> { ["DEBIAN_FRONTEND"] = "noninteractive" });
+            extraEnvironment: new Dictionary<string, string> { ["DEBIAN_FRONTEND"] = "noninteractive" },
+            logger: logger);
 
         if (result.ExitCode != 0)
         {

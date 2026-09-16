@@ -14,11 +14,21 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     // case-insensitively, without needing [JsonPropertyName] on each one.
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) =>
-        await httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificate, ct);
+    public async Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default)
+    {
+        logger.LogDebug("HTTP GET {Route}", AgentApiRoutes.CaCertificate);
+        var bytes = await httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificate, ct);
+        logger.LogDebug("HTTP GET {Route} -> {ByteCount} byte(s)", AgentApiRoutes.CaCertificate, bytes.Length);
+        return bytes;
+    }
 
-    public async Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default) =>
-        await httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificateBundle, ct);
+    public async Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default)
+    {
+        logger.LogDebug("HTTP GET {Route}", AgentApiRoutes.CaCertificateBundle);
+        var bytes = await httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificateBundle, ct);
+        logger.LogDebug("HTTP GET {Route} -> {ByteCount} byte(s)", AgentApiRoutes.CaCertificateBundle, bytes.Length);
+        return bytes;
+    }
 
     public async Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default)
     {
@@ -30,7 +40,10 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             ProtocolVersion: ProtocolVersion.Current,
             RegistrationToken: registrationToken);
 
-        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.Register(Environment.MachineName), request, JsonOptions, ct);
+        var route = AgentApiRoutes.Register(Environment.MachineName);
+        logger.LogDebug("HTTP POST {Route} (hasRegistrationToken={HasToken})", route, registrationToken is not null);
+        var response = await httpClient.PostAsJsonAsync(route, request, JsonOptions, ct);
+        logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<RegisterResult>(JsonOptions, ct);
@@ -50,7 +63,10 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             AgentVersion: AgentVersion.Current,
             BootTimeUtc: ResolveBootTimeUtc());
 
-        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.Alive(Environment.MachineName), request, JsonOptions, ct);
+        var route = AgentApiRoutes.Alive(Environment.MachineName);
+        logger.LogDebug("HTTP POST {Route}", route);
+        var response = await httpClient.PostAsJsonAsync(route, request, JsonOptions, ct);
+        logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
@@ -86,25 +102,36 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
     public async Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
     {
-        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.ReportUpdates(Environment.MachineName), report, JsonOptions, ct);
+        var route = AgentApiRoutes.ReportUpdates(Environment.MachineName);
+        logger.LogDebug("HTTP POST {Route} ({Count} update(s))", route, report.Updates.Count);
+        var response = await httpClient.PostAsJsonAsync(route, report, JsonOptions, ct);
+        logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
     }
 
     public async Task AcknowledgeInstallAsync(InstallOutcome outcome, string? errorDetail, CancellationToken ct = default)
     {
-        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.InstallAck(Environment.MachineName), new InstallAckRequest(outcome, errorDetail), JsonOptions, ct);
+        var route = AgentApiRoutes.InstallAck(Environment.MachineName);
+        logger.LogDebug("HTTP POST {Route} (outcome={Outcome})", route, outcome);
+        var response = await httpClient.PostAsJsonAsync(route, new InstallAckRequest(outcome, errorDetail), JsonOptions, ct);
+        logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
     }
 
     public async Task AcknowledgeRebootAsync(RebootOutcome outcome, string? errorDetail, CancellationToken ct = default)
     {
-        var response = await httpClient.PostAsJsonAsync(AgentApiRoutes.RebootAck(Environment.MachineName), new RebootAckRequest(outcome, errorDetail), JsonOptions, ct);
+        var route = AgentApiRoutes.RebootAck(Environment.MachineName);
+        logger.LogDebug("HTTP POST {Route} (outcome={Outcome})", route, outcome);
+        var response = await httpClient.PostAsJsonAsync(route, new RebootAckRequest(outcome, errorDetail), JsonOptions, ct);
+        logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
     }
 
     public async Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default)
     {
+        logger.LogDebug("HTTP GET {Route}", AgentApiRoutes.Version);
         var response = await httpClient.GetAsync(AgentApiRoutes.Version, ct);
+        logger.LogDebug("HTTP GET {Route} -> {StatusCode}", AgentApiRoutes.Version, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<VersionResponse>(JsonOptions, ct);
@@ -113,7 +140,10 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
     public async Task<RenewCertificateResult> RenewCertificateAsync(CancellationToken ct = default)
     {
-        var response = await httpClient.PostAsync(AgentApiRoutes.Renew(Environment.MachineName), content: null, ct);
+        var route = AgentApiRoutes.Renew(Environment.MachineName);
+        logger.LogDebug("HTTP POST {Route}", route);
+        var response = await httpClient.PostAsync(route, content: null, ct);
+        logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
         {
             return new RenewCertificateResult(false, null);
@@ -132,7 +162,9 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
     public async Task DownloadFileAsync(string downloadUrl, string destinationPath, CancellationToken ct = default)
     {
+        logger.LogDebug("HTTP GET {Route} -> {DestinationPath}", downloadUrl, destinationPath);
         using var response = await httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+        logger.LogDebug("HTTP GET {Route} -> {StatusCode}", downloadUrl, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
 
         await using var source = await response.Content.ReadAsStreamAsync(ct);

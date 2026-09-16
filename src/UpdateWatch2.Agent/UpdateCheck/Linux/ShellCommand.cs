@@ -32,7 +32,8 @@ internal static class ShellCommand
         string fileName,
         IReadOnlyList<string> arguments,
         CancellationToken ct,
-        IReadOnlyDictionary<string, string>? extraEnvironment = null)
+        IReadOnlyDictionary<string, string>? extraEnvironment = null,
+        ILogger? logger = null)
     {
         var startInfo = new ProcessStartInfo(fileName)
         {
@@ -55,6 +56,10 @@ internal static class ShellCommand
             }
         }
 
+        var commandLine = $"{fileName} {string.Join(' ', arguments)}";
+        logger?.LogDebug("Shell: running {CommandLine}", commandLine);
+        var stopwatch = Stopwatch.StartNew();
+
         using var process = new Process { StartInfo = startInfo };
         process.Start();
 
@@ -62,6 +67,10 @@ internal static class ShellCommand
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
 
-        return new Result(process.ExitCode, await stdoutTask, await stderrTask);
+        var result = new Result(process.ExitCode, await stdoutTask, await stderrTask);
+        logger?.LogDebug(
+            "Shell: {CommandLine} exited with code {ExitCode} after {ElapsedMs}ms",
+            commandLine, result.ExitCode, stopwatch.ElapsedMilliseconds);
+        return result;
     }
 }

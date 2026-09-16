@@ -27,7 +27,7 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
     public async Task<UpdateCheckResult> SearchForUpdatesAsync(CancellationToken ct)
     {
         var binary = ResolveBinary();
-        var checkUpdate = await ShellCommand.RunAsync(binary, ["-q", "check-update"], ct);
+        var checkUpdate = await ShellCommand.RunAsync(binary, ["-q", "check-update"], ct, logger: logger);
         if (checkUpdate.ExitCode != 0 && checkUpdate.ExitCode != UpdatesAvailableExitCode)
         {
             logger.LogError(
@@ -72,7 +72,7 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
         var binary = ResolveBinary();
         var args = BuildInstallArgs(packageNames);
 
-        var result = await ShellCommand.RunAsync(binary, args, ct);
+        var result = await ShellCommand.RunAsync(binary, args, ct, logger: logger);
         if (result.ExitCode != 0)
         {
             var stdErr = result.StandardError.Trim();
@@ -95,8 +95,8 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
         try
         {
             var result = binary == "dnf"
-                ? await ShellCommand.RunAsync("dnf", ["needs-restarting", "-r"], ct)
-                : await ShellCommand.RunAsync("needs-restarting", ["-r"], ct);
+                ? await ShellCommand.RunAsync("dnf", ["needs-restarting", "-r"], ct, logger: logger)
+                : await ShellCommand.RunAsync("needs-restarting", ["-r"], ct, logger: logger);
 
             // needs-restarting -r: exit 0 = no reboot needed, 1 = reboot needed.
             return result.ExitCode == 1;

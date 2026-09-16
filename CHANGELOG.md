@@ -11,7 +11,16 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
-## [1.0.3] - 2026-09-16
+## [1.0.4] - 2026-09-16
+
+### Added
+
+- **Much more DEBUG-level logging around every external interface this agent talks to, at the user's explicit request ("Mehr Debug-Infos für die COM-Aufrufe und sonstige Schnittstellen-Aufrufe (Level DEBUG)").** Scoped to the agent (the server's own external interfaces — LDAP, SMTP, the GitHub API — were explicitly out of scope for this request). Covers:
+  - **COM (WUApiLib)** — `WuaUpdateSession` now logs each search/download/install boundary at DEBUG: the search criteria and result count, the selected-vs-pending counts for an install, each EULA acceptance, each per-update download result code, the install `ResultCode`, and every `Microsoft.Update.SystemInfo.RebootRequired` check.
+  - **HTTP calls to the server** — `ServerClient` now logs a DEBUG line before and after every call (register, alive, report-updates, install-ack, reboot-ack, renew, version check, CA-certificate fetch, file download), including the route and the resulting status code.
+  - **Linux shell-outs** — `ShellCommand.RunAsync` gained an optional `logger` parameter, now passed by every `AptUpdateSession`/`DnfUpdateSession` call site, logging the full command line before running and the exit code plus elapsed time after.
+  - **Windows registry/certificate store access** — `WindowsClientCertificateStore` (X509Store open/find/add/remove) and `WindowsRegistryUpdatePolicyStore` (the `NoAutoUpdate` policy read/write added in v1.0.3) now log each operation at DEBUG.
+  - Purely additive logging — no behavior change; all 133 existing tests pass unchanged. Not live-verified against a real Windows host for the COM/registry/certificate-store pieces — same standing caveat this project already carries for that code.
 
 ### Fixed
 
