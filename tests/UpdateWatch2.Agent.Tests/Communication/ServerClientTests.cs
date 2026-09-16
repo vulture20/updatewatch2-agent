@@ -172,6 +172,78 @@ public class ServerClientTests
         }
     }
 
+    [Fact]
+    public async Task SendAliveAsync_retries_a_transient_transport_failure_and_then_succeeds()
+    {
+        // Reported directly by the user: some Alive/Updates calls hit a
+        // ~15s transport-level timeout in the field — this covers the fix,
+        // retrying a connection-level failure (no response ever received,
+        // HttpRequestException.StatusCode is null) rather than failing the
+        // whole heartbeat and waiting out the full interval.
+        var attempts = 0;
+        var handler = new CapturingHttpMessageHandler(_ =>
+        {
+            attempts++;
+            if (attempts < 3)
+            {
+                throw new HttpRequestException("Connection reset by peer", null, statusCode: null);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { installRequested = false }) };
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.Equal(AliveOutcome.Success, result.Outcome);
+        Assert.Equal(3, attempts);
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_gives_up_after_three_attempts_on_a_persistent_transport_failure()
+    {
+        var attempts = 0;
+        var handler = new CapturingHttpMessageHandler(_ =>
+        {
+            attempts++;
+            throw new HttpRequestException("Connection reset by peer", null, statusCode: null);
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.SendAliveAsync());
+
+        Assert.Equal(3, attempts);
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_does_not_retry_a_real_http_error_response()
+    {
+        // A response that was actually received (StatusCode is non-null on
+        // the resulting HttpRequestException, e.g. via EnsureSuccessStatusCode
+        // elsewhere) is a real server-side outcome, not a transport blip —
+        // retrying it blindly would fight the documented transient-409
+        // registration-handoff behavior instead of just returning it as-is.
+        // SendAliveAsync itself never throws on a non-2xx status (it maps
+        // 401/403 to CertificateRejected and everything else to
+        // OtherFailure), so this is the most direct way to prove the HTTP
+        // call itself is only attempted once for a real response.
+        var attempts = 0;
+        var handler = new CapturingHttpMessageHandler(_ =>
+        {
+            attempts++;
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.Equal(AliveOutcome.OtherFailure, result.Outcome);
+        Assert.Equal(1, attempts);
+    }
+
     private class CapturingHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public string? LastRequestBody { get; private set; }

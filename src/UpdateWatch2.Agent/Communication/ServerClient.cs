@@ -14,10 +14,67 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     // case-insensitively, without needing [JsonPropertyName] on each one.
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    // Reported directly by the user: some Alive/ReportUpdates calls run
+    // into a ~15s transport-level timeout in the field (plausibly the same
+    // underlying network condition behind updatewatch2-agent#20's TLS
+    // aborts). Without a retry, a single blip fails the whole call, and
+    // the calling worker (HeartbeatWorker/UpdateCheckWorker) just waits
+    // out its full interval — minutes to hours — before trying again.
+    // Retried here, close to the actual I/O, rather than in each worker's
+    // own loop, so every outbound call gets the same treatment without
+    // duplicating retry logic in each one. Deliberately scoped to
+    // TRANSPORT-level failures only — a connection that was never
+    // established, reset mid-request, or that timed out outright — never
+    // to an HTTP error status code: EnsureSuccessStatusCode()'s
+    // HttpRequestException always carries a non-null StatusCode once a
+    // response was actually received, and a real error response (e.g. the
+    // documented transient 409 during a registration token handoff, or a
+    // genuine 401/403 certificate rejection) needs its caller's own
+    // handling, not a blind retry here.
+    private const int MaxAttempts = 3;
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
+
+    private async Task<T> WithRetryAsync<T>(string operationName, Func<Task<T>> action, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await action();
+            }
+            catch (Exception ex) when (attempt < MaxAttempts && IsTransientTransportFailure(ex) && !ct.IsCancellationRequested)
+            {
+                logger.LogWarning(
+                    ex,
+                    "{Operation} failed on attempt {Attempt}/{MaxAttempts} due to a transient network error — retrying.",
+                    operationName, attempt, MaxAttempts);
+                await Task.Delay(RetryDelay, ct);
+            }
+        }
+    }
+
+    private Task WithRetryAsync(string operationName, Func<Task> action, CancellationToken ct) =>
+        WithRetryAsync(operationName, async () => { await action(); return true; }, ct);
+
+    private static bool IsTransientTransportFailure(Exception ex) => ex switch
+    {
+        // Only a response-less failure — a real HTTP error response
+        // (EnsureSuccessStatusCode, or the higher-level Get*Async helpers
+        // that call it internally) always sets StatusCode.
+        HttpRequestException { StatusCode: null } => true,
+        IOException => true,
+        SocketException => true,
+        // TaskCanceledException also covers HttpClient's own internal
+        // request timeout firing — genuine caller cancellation is already
+        // excluded by the !ct.IsCancellationRequested guard above.
+        TaskCanceledException => true,
+        _ => false,
+    };
+
     public async Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default)
     {
         logger.LogDebug("HTTP GET {Route}", AgentApiRoutes.CaCertificate);
-        var bytes = await httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificate, ct);
+        var bytes = await WithRetryAsync(nameof(FetchCaCertificateAsync), () => httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificate, ct), ct);
         logger.LogDebug("HTTP GET {Route} -> {ByteCount} byte(s)", AgentApiRoutes.CaCertificate, bytes.Length);
         return bytes;
     }
@@ -25,7 +82,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     public async Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default)
     {
         logger.LogDebug("HTTP GET {Route}", AgentApiRoutes.CaCertificateBundle);
-        var bytes = await httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificateBundle, ct);
+        var bytes = await WithRetryAsync(nameof(FetchCaCertificateBundleAsync), () => httpClient.GetByteArrayAsync(AgentApiRoutes.CaCertificateBundle, ct), ct);
         logger.LogDebug("HTTP GET {Route} -> {ByteCount} byte(s)", AgentApiRoutes.CaCertificateBundle, bytes.Length);
         return bytes;
     }
@@ -42,7 +99,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
         var route = AgentApiRoutes.Register(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route} (hasRegistrationToken={HasToken})", route, registrationToken is not null);
-        var response = await httpClient.PostAsJsonAsync(route, request, JsonOptions, ct);
+        var response = await WithRetryAsync(nameof(RegisterAsync), () => httpClient.PostAsJsonAsync(route, request, JsonOptions, ct), ct);
         logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
 
@@ -65,7 +122,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
         var route = AgentApiRoutes.Alive(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route}", route);
-        var response = await httpClient.PostAsJsonAsync(route, request, JsonOptions, ct);
+        var response = await WithRetryAsync(nameof(SendAliveAsync), () => httpClient.PostAsJsonAsync(route, request, JsonOptions, ct), ct);
         logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         if (response.IsSuccessStatusCode)
         {
@@ -104,7 +161,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     {
         var route = AgentApiRoutes.ReportUpdates(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route} ({Count} update(s))", route, report.Updates.Count);
-        var response = await httpClient.PostAsJsonAsync(route, report, JsonOptions, ct);
+        var response = await WithRetryAsync(nameof(ReportUpdatesAsync), () => httpClient.PostAsJsonAsync(route, report, JsonOptions, ct), ct);
         logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
     }
@@ -113,7 +170,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     {
         var route = AgentApiRoutes.InstallAck(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route} (outcome={Outcome})", route, outcome);
-        var response = await httpClient.PostAsJsonAsync(route, new InstallAckRequest(outcome, errorDetail), JsonOptions, ct);
+        var response = await WithRetryAsync(nameof(AcknowledgeInstallAsync), () => httpClient.PostAsJsonAsync(route, new InstallAckRequest(outcome, errorDetail), JsonOptions, ct), ct);
         logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
     }
@@ -122,7 +179,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     {
         var route = AgentApiRoutes.RebootAck(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route} (outcome={Outcome})", route, outcome);
-        var response = await httpClient.PostAsJsonAsync(route, new RebootAckRequest(outcome, errorDetail), JsonOptions, ct);
+        var response = await WithRetryAsync(nameof(AcknowledgeRebootAsync), () => httpClient.PostAsJsonAsync(route, new RebootAckRequest(outcome, errorDetail), JsonOptions, ct), ct);
         logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
     }
@@ -130,7 +187,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     public async Task<VersionResponse> FetchVersionAsync(CancellationToken ct = default)
     {
         logger.LogDebug("HTTP GET {Route}", AgentApiRoutes.Version);
-        var response = await httpClient.GetAsync(AgentApiRoutes.Version, ct);
+        var response = await WithRetryAsync(nameof(FetchVersionAsync), () => httpClient.GetAsync(AgentApiRoutes.Version, ct), ct);
         logger.LogDebug("HTTP GET {Route} -> {StatusCode}", AgentApiRoutes.Version, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
 
@@ -142,7 +199,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     {
         var route = AgentApiRoutes.Renew(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route}", route);
-        var response = await httpClient.PostAsync(route, content: null, ct);
+        var response = await WithRetryAsync(nameof(RenewCertificateAsync), () => httpClient.PostAsync(route, content: null, ct), ct);
         logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
         {
@@ -163,13 +220,21 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     public async Task DownloadFileAsync(string downloadUrl, string destinationPath, CancellationToken ct = default)
     {
         logger.LogDebug("HTTP GET {Route} -> {DestinationPath}", downloadUrl, destinationPath);
-        using var response = await httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, ct);
-        logger.LogDebug("HTTP GET {Route} -> {StatusCode}", downloadUrl, (int)response.StatusCode);
-        response.EnsureSuccessStatusCode();
+        // The whole request-and-copy, not just the initial GetAsync call, is
+        // wrapped here — a transient failure can just as easily happen mid-
+        // stream (CopyToAsync) as at connect time, and File.Create truncates
+        // on every attempt, so a retry always starts the destination file
+        // over cleanly rather than appending to a partial one.
+        await WithRetryAsync(nameof(DownloadFileAsync), async () =>
+        {
+            using var response = await httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+            logger.LogDebug("HTTP GET {Route} -> {StatusCode}", downloadUrl, (int)response.StatusCode);
+            response.EnsureSuccessStatusCode();
 
-        await using var source = await response.Content.ReadAsStreamAsync(ct);
-        await using var destination = File.Create(destinationPath);
-        await source.CopyToAsync(destination, ct);
+            await using var source = await response.Content.ReadAsStreamAsync(ct);
+            await using var destination = File.Create(destinationPath);
+            await source.CopyToAsync(destination, ct);
+        }, ct);
     }
 
     /// <summary>Shared by RegisterAsync and SendAliveAsync so both report the same DNS name resolution.</summary>
