@@ -7,12 +7,12 @@
 [![Latest Release](https://img.shields.io/github/v/release/vulture20/updatewatch2-agent?logo=github&color=2496ED)](https://github.com/vulture20/updatewatch2-agent/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/vulture20/updatewatch2-agent/total?color=2496ED)](https://github.com/vulture20/updatewatch2-agent/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/vulture20/updatewatch2-agent/ci.yml?branch=main&label=build)](https://github.com/vulture20/updatewatch2-agent/actions/workflows/ci.yml)
-[![Status](https://img.shields.io/badge/status-v1.0-brightgreen)](#-project-status)
+[![Status](https://img.shields.io/badge/status-stable-brightgreen)](#-project-status)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 UpdateWatch2 Agent is the managed-endpoint half of **UpdateWatch2**: a .NET Worker Service, targeting both Windows and Linux from one codebase, that checks for OS updates, reports them (and whether a reboot is required) to the server, and installs them only on remote trigger — never rebooting on its own.
 
-> ✅ **v1.0.** The certificate-based onboarding, heartbeat, and self-update mechanics are implemented and tested end to end against a real running server. The real Windows Update API (WUApiLib) integration, the Linux `dnf`/`yum` update path, and the Windows installer's install/uninstall behavior have **not** been verified against a real target host yet. See [Project status](#-project-status) below.
+> ✅ **Stable.** The certificate-based onboarding, heartbeat, and self-update mechanics are implemented and tested end to end against a real running server. The real Windows Update API (WUApiLib) integration, the Linux `dnf`/`yum` update path, and the Windows installer's install/uninstall behavior have **not** been verified against a real target host yet. See [Project status](#-project-status) below.
 
 Companion repository: [updatewatch2-server](https://github.com/vulture20/updatewatch2-server) — the management server this agent reports to.
 

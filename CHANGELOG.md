@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.2] - 2026-09-16
+
+### Changed
+
+- **README/README.de "Project status" badge and callout still said "v1.0" — at the user's explicit request, both now say "Stable"/"Stabil"** (mirrored in the server repo's own README pair too, which carries the identical badge).
+
 ## [1.0.1] - 2026-09-13
 
 ### Fixed

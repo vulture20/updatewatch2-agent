@@ -7,12 +7,12 @@
 [![Latest Release](https://img.shields.io/github/v/release/vulture20/updatewatch2-agent?logo=github&color=2496ED)](https://github.com/vulture20/updatewatch2-agent/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/vulture20/updatewatch2-agent/total?color=2496ED)](https://github.com/vulture20/updatewatch2-agent/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/vulture20/updatewatch2-agent/ci.yml?branch=main&label=build)](https://github.com/vulture20/updatewatch2-agent/actions/workflows/ci.yml)
-[![Status](https://img.shields.io/badge/status-v1.0-brightgreen)](#-projektstatus)
+[![Status](https://img.shields.io/badge/status-stable-brightgreen)](#-projektstatus)
 [![Lizenz: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 UpdateWatch2 Agent ist die Endgeräte-Hälfte von **UpdateWatch2**: ein .NET-Worker-Service, der aus einer einzigen Codebasis heraus sowohl Windows als auch Linux bedient, auf Betriebssystem-Updates prüft, sie (samt Information, ob ein Neustart nötig ist) an den Server meldet und sie nur auf Fernauslösung hin installiert — nie von sich aus neu startet.
 
-> ✅ **v1.0.** Das zertifikatsbasierte Onboarding, der Heartbeat und der Selbst-Update-Mechanismus sind durchgängig implementiert und gegen einen echten laufenden Server getestet. Die echte Windows-Update-API-Integration (WUApiLib), der Linux-`dnf`/`yum`-Update-Pfad sowie das Installations-/Deinstallationsverhalten des Windows-Installers wurden **noch nicht** gegen ein echtes Zielsystem verifiziert. Siehe [Projektstatus](#-projektstatus) weiter unten.
+> ✅ **Stabil.** Das zertifikatsbasierte Onboarding, der Heartbeat und der Selbst-Update-Mechanismus sind durchgängig implementiert und gegen einen echten laufenden Server getestet. Die echte Windows-Update-API-Integration (WUApiLib), der Linux-`dnf`/`yum`-Update-Pfad sowie das Installations-/Deinstallationsverhalten des Windows-Installers wurden **noch nicht** gegen ein echtes Zielsystem verifiziert. Siehe [Projektstatus](#-projektstatus) weiter unten.
 
 Begleit-Repository: [updatewatch2-server](https://github.com/vulture20/updatewatch2-server) — der Verwaltungsserver, an den dieser Agent meldet.
 
