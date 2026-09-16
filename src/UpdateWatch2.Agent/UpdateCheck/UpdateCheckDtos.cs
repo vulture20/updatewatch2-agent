@@ -58,3 +58,17 @@ public enum InstallOutcome
 /// directly.
 /// </summary>
 public record InstallResult(InstallOutcome Outcome, string? ErrorDetail = null);
+
+/// <summary>
+/// Return value of <see cref="IUpdateChecker.PreDownloadAsync"/> — proactively
+/// fetching pending updates' bytes ahead of an actual install trigger, so an
+/// eventual install applies from local cache instead of paying for the
+/// download at trigger time. Same <see cref="Success"/>/<see cref="ErrorDetail"/>
+/// shape as <see cref="UpdateCheckResult"/> rather than an outcome enum like
+/// <see cref="InstallResult"/> — there's no distinguishable "succeeded with
+/// errors" case worth surfacing here, only "downloaded (or nothing to do)"
+/// vs. "failed, will retry on the next periodic check." A failure is
+/// deliberately non-fatal to the caller: this is a best-effort optimization,
+/// never a prerequisite for install to keep working.
+/// </summary>
+public record PreDownloadResult(bool Success, string? ErrorDetail = null);

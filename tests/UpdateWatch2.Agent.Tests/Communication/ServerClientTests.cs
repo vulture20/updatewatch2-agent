@@ -150,6 +150,38 @@ public class ServerClientTests
     }
 
     [Fact]
+    public async Task SendAliveAsync_parses_preDownloadWindowsUpdatesEnabled_when_the_server_reports_it()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false, preDownloadWindowsUpdatesEnabled = true }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.True(result.PreDownloadWindowsUpdatesEnabled);
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_defaults_preDownloadWindowsUpdatesEnabled_to_false_when_the_server_omits_it()
+    {
+        // Backward compat with a pre-1.1.0-protocol server that doesn't
+        // send this field at all.
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.False(result.PreDownloadWindowsUpdatesEnabled);
+    }
+
+    [Fact]
     public async Task DownloadFileAsync_writes_the_response_body_to_the_destination_path()
     {
         var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

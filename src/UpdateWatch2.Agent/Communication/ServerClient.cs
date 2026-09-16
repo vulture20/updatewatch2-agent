@@ -129,7 +129,8 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
             return new AliveResult(
                 AliveOutcome.Success, body?.InstallRequested ?? false, body?.InstallUpdateIds, body?.AgentUpdateAvailable,
-                body?.CertificateRotationPending ?? false, body?.RebootRequested ?? false);
+                body?.CertificateRotationPending ?? false, body?.RebootRequested ?? false,
+                body?.PreDownloadWindowsUpdatesEnabled ?? false);
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -146,7 +147,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
     private record AliveResponseBody(
         bool InstallRequested, IReadOnlyList<string>? InstallUpdateIds, AgentUpdateOffer? AgentUpdateAvailable,
-        bool CertificateRotationPending, bool RebootRequested);
+        bool CertificateRotationPending, bool RebootRequested, bool PreDownloadWindowsUpdatesEnabled);
 
     /// <summary>
     /// Computes when this machine last booted from <see cref="Environment.TickCount64"/>

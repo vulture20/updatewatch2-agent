@@ -17,4 +17,12 @@ public class NoOpUpdateChecker(ILogger<NoOpUpdateChecker> logger) : IUpdateCheck
         logger.LogWarning("No update installer is implemented for this platform yet ({Os}).", Environment.OSVersion.Platform);
         return Task.FromResult(new InstallResult(InstallOutcome.Succeeded));
     }
+
+    // No-op, no warning logged — unlike CheckAsync/InstallAsync above,
+    // pre-download is a best-effort optimization a caller opts into per
+    // the server's own fleet-wide toggle, not something an admin expects
+    // to actually work on every platform yet, so nothing here is worth
+    // warning about every periodic check.
+    public Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default) =>
+        Task.FromResult(new PreDownloadResult(true));
 }

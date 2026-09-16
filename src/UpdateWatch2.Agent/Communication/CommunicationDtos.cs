@@ -114,7 +114,8 @@ public record AliveResult(
     IReadOnlyList<string>? InstallUpdateIds = null,
     AgentUpdateOffer? AgentUpdateAvailable = null,
     bool CertificateRotationPending = false,
-    bool RebootRequested = false)
+    bool RebootRequested = false,
+    bool PreDownloadWindowsUpdatesEnabled = false)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }

@@ -204,6 +204,7 @@ var caTrustStorePath = OperatingSystem.IsWindows()
 builder.Services.AddSingleton(new FileCaTrustStore(caTrustStorePath));
 
 builder.Services.AddSingleton<IAgentCertificateState, AgentCertificateState>();
+builder.Services.AddSingleton<IPreDownloadPolicyState, PreDownloadPolicyState>();
 builder.Services.AddSingleton<IRegistrationWakeSignal, RegistrationWakeSignal>();
 builder.Services.AddSingleton<PinnedServerCertificateValidator>();
 

@@ -164,6 +164,72 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         return new InstallResult(InstallOutcome.Succeeded);
     }
 
+    public PreDownloadResult DownloadOnly(CancellationToken ct)
+    {
+        dynamic session = CreateSession();
+        dynamic searcher = session.CreateUpdateSearcher();
+        ct.ThrowIfCancellationRequested();
+        logger.LogDebug("COM: Microsoft.Update.Session.CreateUpdateSearcher().Search({Criteria}) [pre-download]", SearchCriteria);
+        dynamic pending = searcher.Search(SearchCriteria).Updates;
+
+        // Unlike DownloadAndInstall, this skips anything already downloaded
+        // (IUpdate.IsDownloaded — the first real use of that property in
+        // this codebase) rather than re-requesting it: WUA persists this
+        // flag itself as OS state, independent of this agent's own process
+        // lifetime, which is what keeps re-running this on every periodic
+        // UpdateCheckWorker tick cheap once caught up.
+        dynamic toDownload = NewUpdateCollection();
+        int pendingCount = pending.Count;
+        var queuedCount = 0;
+        for (var i = 0; i < pendingCount; i++)
+        {
+            dynamic update = pending.Item(i);
+            if ((bool)update.IsDownloaded)
+            {
+                continue;
+            }
+
+            if (!(bool)update.EulaAccepted)
+            {
+                logger.LogDebug("COM: accepting EULA for {Title}", (string)update.Title);
+                update.AcceptEula();
+            }
+
+            toDownload.Add(update);
+            queuedCount++;
+        }
+
+        logger.LogDebug(
+            "COM: {PendingCount} pending update(s) found, {QueuedCount} not yet downloaded.", pendingCount, queuedCount);
+
+        if (queuedCount == 0)
+        {
+            return new PreDownloadResult(true);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        logger.LogDebug("COM: Microsoft.Update.Session.CreateUpdateDownloader().Download() for {Count} update(s) [pre-download].", queuedCount);
+        dynamic downloader = session.CreateUpdateDownloader();
+        downloader.Updates = toDownload;
+        dynamic downloadResult = downloader.Download();
+
+        // Deliberately checked as one aggregate result rather than per-update
+        // (unlike DownloadAndInstall's own GetUpdateResult(i) loop) — that
+        // per-update precision matters there because it decides exactly what
+        // gets installed; here a failure just means "retry on the next
+        // periodic check," so the coarser aggregate ResultCode is enough.
+        int resultCode = (int)downloadResult.ResultCode;
+        logger.LogDebug("COM: pre-download ResultCode={ResultCode}", resultCode);
+        if (!IsSuccessCode(resultCode))
+        {
+            logger.LogWarning("Pre-download of pending Windows updates finished with result code {ResultCode} for {Count} update(s).", resultCode, queuedCount);
+            return new PreDownloadResult(false, $"Pre-download finished with result code {resultCode} for {queuedCount} update(s).");
+        }
+
+        logger.LogInformation("Pre-downloaded {Count} pending Windows update(s) ahead of an eventual install.", queuedCount);
+        return new PreDownloadResult(true);
+    }
+
     // OperationResultCode (WUApiLib): 0 orcNotStarted, 1 orcInProgress,
     // 2 orcSucceeded, 3 orcSucceededWithErrors, 4 orcFailed, 5 orcAborted.
     // SucceededWithErrors counts as success here — some but not all

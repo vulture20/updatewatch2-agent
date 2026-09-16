@@ -85,16 +85,45 @@ public class WindowsUpdateCheckerTests
         Assert.Equal(["KB1", "KB2"], received);
     }
 
+    [Fact]
+    public async Task PreDownloadAsync_returns_the_sessions_result()
+    {
+        var result = new PreDownloadResult(true);
+        var checker = new WindowsUpdateChecker(new FakeSession(preDownloadResult: result), NullLogger<WindowsUpdateChecker>.Instance);
+
+        var actual = await checker.PreDownloadAsync();
+
+        Assert.Same(result, actual);
+    }
+
+    [Fact]
+    public async Task PreDownloadAsync_reports_failure_and_the_exception_message_when_the_session_throws()
+    {
+        var checker = new WindowsUpdateChecker(
+            new FakeSession(onPreDownload: () => throw new InvalidOperationException("simulated WUApiLib failure")),
+            NullLogger<WindowsUpdateChecker>.Instance);
+
+        var actual = await checker.PreDownloadAsync();
+
+        Assert.False(actual.Success);
+        Assert.Equal("simulated WUApiLib failure", actual.ErrorDetail);
+    }
+
     private class FakeSession(
         UpdateCheckResult? searchResult = null,
         InstallResult? installResult = null,
+        PreDownloadResult? preDownloadResult = null,
         Func<UpdateCheckResult>? onSearch = null,
-        Func<IReadOnlyList<string>?, InstallResult>? onInstall = null) : IWindowsUpdateSession
+        Func<IReadOnlyList<string>?, InstallResult>? onInstall = null,
+        Func<PreDownloadResult>? onPreDownload = null) : IWindowsUpdateSession
     {
         public UpdateCheckResult SearchForUpdates(CancellationToken ct) =>
             onSearch is not null ? onSearch() : searchResult ?? new UpdateCheckResult([], RebootRequired: false);
 
         public InstallResult DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct) =>
             onInstall is not null ? onInstall(packageIds) : installResult ?? new InstallResult(InstallOutcome.Succeeded);
+
+        public PreDownloadResult DownloadOnly(CancellationToken ct) =>
+            onPreDownload is not null ? onPreDownload() : preDownloadResult ?? new PreDownloadResult(true);
     }
 }

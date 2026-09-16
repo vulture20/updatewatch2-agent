@@ -65,6 +65,7 @@ public class HeartbeatWorker(
     SelfUpdateStagingCleaner selfUpdateStagingCleaner,
     IRegistrationWakeSignal wakeSignal,
     IAgentRebooter agentRebooter,
+    IPreDownloadPolicyState preDownloadPolicyState,
     ILogger<HeartbeatWorker> logger) : BackgroundService
 {
     // A single 401/403 could in principle be some transient fluke this
@@ -178,6 +179,13 @@ public class HeartbeatWorker(
 
             if (result.Outcome == AliveOutcome.Success)
             {
+                // Unconditional, not just when true — so the server turning
+                // this off also propagates within one heartbeat interval,
+                // not only turning it on. UpdateCheckWorker reads this on
+                // its own, much coarser cadence (see IPreDownloadPolicyState's
+                // own doc comment for why it isn't itself polled here).
+                preDownloadPolicyState.Update(result.PreDownloadWindowsUpdatesEnabled);
+
                 if (result.InstallRequested)
                 {
                     await HandleInstallRequestAsync(result.InstallUpdateIds, ct);

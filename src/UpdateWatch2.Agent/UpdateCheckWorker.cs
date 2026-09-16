@@ -19,6 +19,7 @@ public class UpdateCheckWorker(
     IUpdateChecker updateChecker,
     IServerClient serverClient,
     IAgentCertificateState certificateState,
+    IPreDownloadPolicyState preDownloadPolicyState,
     ILogger<UpdateCheckWorker> logger) : BackgroundService, IUpdateCheckTrigger
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -89,6 +90,30 @@ public class UpdateCheckWorker(
         logger.LogInformation(
             "Update check reported {Count} update(s), reboot required: {RebootRequired}",
             result.Updates.Count, result.RebootRequired);
+
+        // Piggybacked on this same tick, right after a successful
+        // search+report — own try/catch, non-fatal: a pre-download failure
+        // must never affect the check/report above, and just gets retried
+        // on the next periodic tick (or the next on-demand trigger).
+        if (preDownloadPolicyState.Enabled && result.Updates.Count > 0)
+        {
+            try
+            {
+                var preDownloadResult = await updateChecker.PreDownloadAsync(ct);
+                if (!preDownloadResult.Success)
+                {
+                    logger.LogWarning("Pre-download of pending updates failed ({ErrorDetail}).", preDownloadResult.ErrorDetail);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Pre-download of pending updates failed unexpectedly.");
+            }
+        }
     }
 
     private TimeSpan NextDelay()

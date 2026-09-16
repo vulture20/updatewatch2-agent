@@ -30,4 +30,12 @@ public interface IWindowsUpdateSession
     /// individually named on the wire) is handled when a selection is given.
     /// </summary>
     InstallResult DownloadAndInstall(IReadOnlyList<string>? packageIds, CancellationToken ct);
+
+    /// <summary>
+    /// Searches and downloads whatever is currently pending, but never
+    /// installs it — see <see cref="WuaUpdateSession"/> for how this skips
+    /// anything <c>IUpdate.IsDownloaded</c> already reports as downloaded,
+    /// so re-running this on every periodic check stays cheap once caught up.
+    /// </summary>
+    PreDownloadResult DownloadOnly(CancellationToken ct);
 }

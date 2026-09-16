@@ -35,7 +35,7 @@ public class WorkerTests
 
         var worker = new UpdateCheckWorker(
             new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 10 },
-            checker, client, ReadyCertificateState(), NullLogger<UpdateCheckWorker>.Instance);
+            checker, client, ReadyCertificateState(), new PreDownloadPolicyState(), NullLogger<UpdateCheckWorker>.Instance);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
@@ -59,7 +59,7 @@ public class WorkerTests
         var client = new FakeServerClient(onReportUpdates: _ => reportCallCount++);
         var worker = new UpdateCheckWorker(
             new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 10 },
-            checker, client, ReadyCertificateState(), NullLogger<UpdateCheckWorker>.Instance);
+            checker, client, ReadyCertificateState(), new PreDownloadPolicyState(), NullLogger<UpdateCheckWorker>.Instance);
 
         await worker.CheckAndReportNowAsync();
 
@@ -76,13 +76,80 @@ public class WorkerTests
 
         var worker = new UpdateCheckWorker(
             new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 1 },
-            checker, client, certificateState, NullLogger<UpdateCheckWorker>.Instance);
+            checker, client, certificateState, new PreDownloadPolicyState(), NullLogger<UpdateCheckWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await Task.Delay(TimeSpan.FromMilliseconds(200));
         await worker.StopAsync(CancellationToken.None);
 
         Assert.False(reportedBeforeReady);
+    }
+
+    [Fact]
+    public async Task UpdateCheckWorker_pre_downloads_after_a_successful_report_when_enabled_and_updates_were_found()
+    {
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([new DetectedUpdate("Security Update", "KB123", "desc")], RebootRequired: false));
+        var client = new FakeServerClient();
+        var policyState = new PreDownloadPolicyState();
+        policyState.Update(true);
+        var worker = new UpdateCheckWorker(
+            new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 10 },
+            checker, client, ReadyCertificateState(), policyState, NullLogger<UpdateCheckWorker>.Instance);
+
+        await worker.CheckAndReportNowAsync();
+
+        Assert.Equal(1, checker.PreDownloadCallCount);
+    }
+
+    [Fact]
+    public async Task UpdateCheckWorker_does_not_pre_download_when_the_policy_state_is_disabled()
+    {
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([new DetectedUpdate("Security Update", "KB123", "desc")], RebootRequired: false));
+        var client = new FakeServerClient();
+        var policyState = new PreDownloadPolicyState();
+        policyState.Update(false);
+        var worker = new UpdateCheckWorker(
+            new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 10 },
+            checker, client, ReadyCertificateState(), policyState, NullLogger<UpdateCheckWorker>.Instance);
+
+        await worker.CheckAndReportNowAsync();
+
+        Assert.Equal(0, checker.PreDownloadCallCount);
+    }
+
+    [Fact]
+    public async Task UpdateCheckWorker_does_not_pre_download_when_no_updates_were_found()
+    {
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false));
+        var client = new FakeServerClient();
+        var policyState = new PreDownloadPolicyState();
+        policyState.Update(true);
+        var worker = new UpdateCheckWorker(
+            new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 10 },
+            checker, client, ReadyCertificateState(), policyState, NullLogger<UpdateCheckWorker>.Instance);
+
+        await worker.CheckAndReportNowAsync();
+
+        Assert.Equal(0, checker.PreDownloadCallCount);
+    }
+
+    [Fact]
+    public async Task UpdateCheckWorker_survives_a_pre_download_failure_without_affecting_the_report()
+    {
+        var reportCallCount = 0;
+        var checker = new FakeUpdateChecker(
+            new UpdateCheckResult([new DetectedUpdate("Security Update", "KB123", "desc")], RebootRequired: false),
+            onPreDownload: () => throw new InvalidOperationException("simulated pre-download failure"));
+        var client = new FakeServerClient(onReportUpdates: _ => reportCallCount++);
+        var policyState = new PreDownloadPolicyState();
+        policyState.Update(true);
+        var worker = new UpdateCheckWorker(
+            new AgentOptions { UpdateCheckIntervalMinutes = 60, UpdateCheckJitterSeconds = 10 },
+            checker, client, ReadyCertificateState(), policyState, NullLogger<UpdateCheckWorker>.Instance);
+
+        await worker.CheckAndReportNowAsync();
+
+        Assert.Equal(1, reportCallCount);
     }
 
     [Fact]
@@ -102,6 +169,41 @@ public class WorkerTests
         await RunUntilCancelledAsync(worker, cts.Token);
 
         Assert.Equal(1, aliveCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_updates_the_pre_download_policy_state_from_a_successful_heartbeat()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onPreDownloadWindowsUpdatesEnabled: _ => true);
+        var policyState = new PreDownloadPolicyState();
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), preDownloadPolicyState: policyState);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.True(policyState.Enabled);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_turns_the_pre_download_policy_state_off_when_the_server_reports_it_disabled()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onPreDownloadWindowsUpdatesEnabled: _ => false);
+        var policyState = new PreDownloadPolicyState();
+        policyState.Update(true);
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), preDownloadPolicyState: policyState);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.False(policyState.Enabled);
     }
 
     [Fact]
@@ -794,7 +896,8 @@ public class WorkerTests
         IAgentSelfUpdater? selfUpdater = null,
         SelfUpdateStagingCleaner? selfUpdateStagingCleaner = null,
         IRegistrationWakeSignal? wakeSignal = null,
-        IAgentRebooter? agentRebooter = null) =>
+        IAgentRebooter? agentRebooter = null,
+        IPreDownloadPolicyState? preDownloadPolicyState = null) =>
         new(options, client, certificateState,
             certificateStore ?? new FakeClientCertificateStore(existing: null),
             caTrustStore ?? new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem")),
@@ -811,6 +914,7 @@ public class WorkerTests
                 NullLogger<SelfUpdateStagingCleaner>.Instance),
             wakeSignal ?? new RegistrationWakeSignal(),
             agentRebooter ?? new FakeAgentRebooter(),
+            preDownloadPolicyState ?? new PreDownloadPolicyState(),
             logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     private static AgentCertificateState ReadyCertificateState()
@@ -837,11 +941,14 @@ public class WorkerTests
         }
     }
 
-    private class FakeUpdateChecker(UpdateCheckResult result, Func<CheckerInstallOutcome>? onInstall = null) : IUpdateChecker
+    private class FakeUpdateChecker(
+        UpdateCheckResult result, Func<CheckerInstallOutcome>? onInstall = null, Func<PreDownloadResult>? onPreDownload = null) : IUpdateChecker
     {
         public int InstallCallCount { get; private set; }
 
         public IReadOnlyList<string>? LastInstallPackageIds { get; private set; }
+
+        public int PreDownloadCallCount { get; private set; }
 
         public Task<UpdateCheckResult> CheckAsync(CancellationToken ct = default) => Task.FromResult(result);
 
@@ -851,6 +958,12 @@ public class WorkerTests
             LastInstallPackageIds = packageIds;
             var outcome = onInstall is null ? CheckerInstallOutcome.Succeeded : onInstall();
             return Task.FromResult(new InstallResult(outcome, outcome == CheckerInstallOutcome.Failed ? "simulated failure detail" : null));
+        }
+
+        public Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default)
+        {
+            PreDownloadCallCount++;
+            return Task.FromResult(onPreDownload is null ? new PreDownloadResult(true) : onPreDownload());
         }
     }
 
@@ -881,7 +994,8 @@ public class WorkerTests
         Func<int, bool>? onCertificateRotationPending = null,
         Func<int, IReadOnlyList<string>?>? onInstallUpdateIds = null,
         Func<int, bool>? onRebootRequested = null,
-        Action<WireRebootOutcome, string?>? onAcknowledgeReboot = null) : IServerClient
+        Action<WireRebootOutcome, string?>? onAcknowledgeReboot = null,
+        Func<int, bool>? onPreDownloadWindowsUpdatesEnabled = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
@@ -911,7 +1025,10 @@ public class WorkerTests
             var agentUpdateAvailable = outcome == AliveOutcome.Success ? onAgentUpdateAvailable?.Invoke(SendAliveCallCount) : null;
             var certificateRotationPending = outcome == AliveOutcome.Success && (onCertificateRotationPending?.Invoke(SendAliveCallCount) ?? false);
             var rebootRequested = outcome == AliveOutcome.Success && (onRebootRequested?.Invoke(SendAliveCallCount) ?? false);
-            return Task.FromResult(new AliveResult(outcome, installRequested, installUpdateIds, agentUpdateAvailable, certificateRotationPending, rebootRequested));
+            var preDownloadWindowsUpdatesEnabled = outcome == AliveOutcome.Success && (onPreDownloadWindowsUpdatesEnabled?.Invoke(SendAliveCallCount) ?? false);
+            return Task.FromResult(new AliveResult(
+                outcome, installRequested, installUpdateIds, agentUpdateAvailable, certificateRotationPending, rebootRequested,
+                preDownloadWindowsUpdatesEnabled));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)

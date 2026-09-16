@@ -45,4 +45,18 @@ public class WindowsUpdateChecker(IWindowsUpdateSession session, ILogger<Windows
                 return new InstallResult(InstallOutcome.Failed, ex.Message);
             }
         }, ct);
+
+    public Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default) =>
+        Task.Run(() =>
+        {
+            try
+            {
+                return session.DownloadOnly(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Pre-downloading Windows updates failed");
+                return new PreDownloadResult(false, ex.Message);
+            }
+        }, ct);
 }

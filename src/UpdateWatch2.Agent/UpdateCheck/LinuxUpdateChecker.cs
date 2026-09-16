@@ -41,4 +41,15 @@ public class LinuxUpdateChecker(ILinuxUpdateSession session, ILogger<LinuxUpdate
             return new InstallResult(InstallOutcome.Failed, ex.Message);
         }
     }
+
+    // No-op for now — pre-downloading via apt/dnf isn't implemented yet
+    // (the feature this supports, updatewatch2-server's Pre-download
+    // Windows updates toggle, is scoped Windows-only for its first
+    // version). Always reports success rather than an error, matching
+    // NoOpUpdateChecker's own "nothing to do here" convention, so a
+    // Linux agent doesn't log a spurious warning every periodic check
+    // just because the server enabled a fleet-wide toggle this platform
+    // doesn't act on yet.
+    public Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default) =>
+        Task.FromResult(new PreDownloadResult(true));
 }
