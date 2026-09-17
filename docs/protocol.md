@@ -78,7 +78,7 @@ client certificate.
   "operatingSystem": "Windows Server 2022",
   "ipAddress": "10.0.0.5",
   "agentVersion": "1.0.1",
-  "protocolVersion": "1.0.0",
+  "protocolVersion": "1.1.0",
   "registrationToken": null
 }
 ```
@@ -96,7 +96,7 @@ and how a hijack attempt on an already-claimed hostname is rejected).
   "approved": false,
   "registrationToken": "<opaque one-time token, present until approved>",
   "certificate": null,
-  "protocolVersion": "1.0.0"
+  "protocolVersion": "1.1.0"
 }
 ```
 
@@ -147,7 +147,8 @@ afterward.
   "installUpdateIds": null,
   "agentUpdateAvailable": null,
   "certificateRotationPending": false,
-  "rebootRequested": false
+  "rebootRequested": false,
+  "preDownloadWindowsUpdatesEnabled": true
 }
 ```
 
@@ -162,6 +163,7 @@ poll endpoint:
 | `agentUpdateAvailable` | A newer agent *software* release is known and auto-update is enabled — see the `AgentUpdateOffer` shape below. | Self-correcting — the next heartbeat after the agent restarts on the new build reports the new version and this goes null on its own. |
 | `certificateRotationPending` | This agent's certificate was issued under a CA root that's no longer the CA's current one (a rotation happened since). | Self-correcting — clears the moment the agent renews via `POST .../renew`. |
 | `rebootRequested` | An admin clicked "Reboot machine" (`POST .../reboot`). | `POST .../reboot-ack` |
+| `preDownloadWindowsUpdatesEnabled` | The admin-configured, fleet-wide `AdminSettings.PreDownloadWindowsUpdatesEnabled` toggle (Settings → General, default true) — not a queued action, just the live setting value re-sent every heartbeat. Windows-only: `UpdateCheckWorker` acts on it (via `IUpdateChecker.PreDownloadAsync`) only on a Windows agent; a Linux agent receives the same field but its own pre-download step is currently a no-op. | Not "cleared" — re-evaluated fresh every heartbeat from the live setting. |
 
 `agentUpdateAvailable`'s shape (`AgentUpdateOffer`), when non-null:
 
