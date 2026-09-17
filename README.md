@@ -29,9 +29,9 @@ Companion repository: [updatewatch2-server](https://github.com/vulture20/updatew
 - Detects a protocol-version mismatch against the server and logs a warning, without hard-failing.
 
 ### 📦 Real update detection & installation
-- **Windows:** the real Windows Update API (WUApiLib) via late-bound COM — search, download, and install, deliberately excluding driver updates by default, the same conservative default Windows Update's own UI uses.
+- **Windows:** the real Windows Update API (WUApiLib) via late-bound COM — search, download, and install, deliberately excluding driver updates by default, the same conservative default Windows Update's own UI uses. Can also proactively download pending updates ahead of an actual install trigger, gated by an admin-configurable, fleet-wide toggle (Settings → General on the server) — so an install applies from local cache instead of downloading at trigger time.
 - **Linux:** `apt`/`dpkg` on Debian-derived distros, `dnf`/`yum` on RPM-based ones, auto-detected at startup; falls back to a no-op checker if neither is present.
-- Installation never triggers a reboot itself — "reboot required" is always a separate, independently reported signal.
+- Installation never triggers a reboot itself — "reboot required" is always a separate, independently reported signal. A full machine reboot (not just this agent's own service) can still be triggered remotely by an admin, delivered and acknowledged the same way as a triggered install.
 
 ### 🔄 Agent self-update
 - Reacts to the server offering a newer agent release over the existing heartbeat channel — no separate poll loop.

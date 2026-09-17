@@ -29,9 +29,9 @@ Begleit-Repository: [updatewatch2-server](https://github.com/vulture20/updatewat
 - Erkennt eine Protokollversions-Abweichung gegenüber dem Server und protokolliert eine Warnung, ohne hart abzubrechen.
 
 ### 📦 Echte Update-Erkennung & -Installation
-- **Windows:** die echte Windows-Update-API (WUApiLib) per Late-Bound-COM — Suche, Download und Installation, wobei Treiber-Updates standardmäßig bewusst ausgeschlossen werden, derselbe konservative Standard wie in der Windows-Update-Oberfläche selbst.
+- **Windows:** die echte Windows-Update-API (WUApiLib) per Late-Bound-COM — Suche, Download und Installation, wobei Treiber-Updates standardmäßig bewusst ausgeschlossen werden, derselbe konservative Standard wie in der Windows-Update-Oberfläche selbst. Kann anstehende Updates außerdem proaktiv vorab herunterladen, bevor eine Installation tatsächlich ausgelöst wird — gesteuert über eine admin-konfigurierbare, flottenweite Option (Einstellungen → Allgemein auf dem Server) —, sodass eine Installation aus dem lokalen Cache erfolgt statt erst zum Installationszeitpunkt herunterzuladen.
 - **Linux:** `apt`/`dpkg` auf Debian-basierten Distributionen, `dnf`/`yum` auf RPM-basierten — automatisch beim Start erkannt; fällt auf einen No-Op-Checker zurück, falls keins von beiden vorhanden ist.
-- Die Installation löst nie selbst einen Neustart aus — "Neustart erforderlich" ist immer ein separates, unabhängig gemeldetes Signal.
+- Die Installation löst nie selbst einen Neustart aus — "Neustart erforderlich" ist immer ein separates, unabhängig gemeldetes Signal. Ein vollständiger Neustart der Maschine (nicht nur des eigenen Dienstes) kann von einem Admin trotzdem aus der Ferne ausgelöst werden — Zustellung und Bestätigung laufen genauso wie bei einer ausgelösten Installation.
 
 ### 🔄 Agent-Selbst-Update
 - Reagiert darauf, wenn der Server über den bestehenden Heartbeat-Kanal ein neueres Agent-Release anbietet — keine separate Abfrageschleife.
