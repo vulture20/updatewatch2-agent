@@ -107,7 +107,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         return result ?? new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: null);
     }
 
-    public async Task<AliveResult> SendAliveAsync(CancellationToken ct = default)
+    public async Task<AliveResult> SendAliveAsync(bool? rebootRequired = null, CancellationToken ct = default)
     {
         // Re-resolved fresh on every heartbeat, not just at registration —
         // this is the only channel that can ever update these fields after
@@ -118,7 +118,8 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             OperatingSystem: OperatingSystemDescriber.Describe(),
             IpAddress: ResolveOutboundIpAddress(),
             AgentVersion: AgentVersion.Current,
-            BootTimeUtc: ResolveBootTimeUtc());
+            BootTimeUtc: ResolveBootTimeUtc(),
+            RebootRequired: rebootRequired);
 
         var route = AgentApiRoutes.Alive(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route}", route);

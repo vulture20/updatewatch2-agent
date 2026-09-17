@@ -109,13 +109,39 @@ public class WindowsUpdateCheckerTests
         Assert.Equal("simulated WUApiLib failure", actual.ErrorDetail);
     }
 
+    [Fact]
+    public async Task CheckRebootRequiredAsync_returns_the_sessions_result()
+    {
+        var result = new RebootCheckResult(true);
+        var checker = new WindowsUpdateChecker(new FakeSession(rebootCheckResult: result), NullLogger<WindowsUpdateChecker>.Instance);
+
+        var actual = await checker.CheckRebootRequiredAsync();
+
+        Assert.Same(result, actual);
+    }
+
+    [Fact]
+    public async Task CheckRebootRequiredAsync_reports_failure_and_the_exception_message_when_the_session_throws()
+    {
+        var checker = new WindowsUpdateChecker(
+            new FakeSession(onRebootCheck: () => throw new InvalidOperationException("simulated WUApiLib failure")),
+            NullLogger<WindowsUpdateChecker>.Instance);
+
+        var actual = await checker.CheckRebootRequiredAsync();
+
+        Assert.False(actual.Success);
+        Assert.Equal("simulated WUApiLib failure", actual.ErrorDetail);
+    }
+
     private class FakeSession(
         UpdateCheckResult? searchResult = null,
         InstallResult? installResult = null,
         PreDownloadResult? preDownloadResult = null,
+        RebootCheckResult? rebootCheckResult = null,
         Func<UpdateCheckResult>? onSearch = null,
         Func<IReadOnlyList<string>?, InstallResult>? onInstall = null,
-        Func<PreDownloadResult>? onPreDownload = null) : IWindowsUpdateSession
+        Func<PreDownloadResult>? onPreDownload = null,
+        Func<RebootCheckResult>? onRebootCheck = null) : IWindowsUpdateSession
     {
         public UpdateCheckResult SearchForUpdates(CancellationToken ct) =>
             onSearch is not null ? onSearch() : searchResult ?? new UpdateCheckResult([], RebootRequired: false);
@@ -125,5 +151,8 @@ public class WindowsUpdateCheckerTests
 
         public PreDownloadResult DownloadOnly(CancellationToken ct) =>
             onPreDownload is not null ? onPreDownload() : preDownloadResult ?? new PreDownloadResult(true);
+
+        public RebootCheckResult CheckRebootRequired(CancellationToken ct) =>
+            onRebootCheck is not null ? onRebootCheck() : rebootCheckResult ?? new RebootCheckResult(false);
     }
 }

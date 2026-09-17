@@ -110,4 +110,13 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
 
         return new InstallResult(InstallOutcome.Succeeded);
     }
+
+    // A single stat() syscall — essentially free, safe to run far more
+    // often than the full apt-get update + apt list --upgradable cycle
+    // SearchForUpdatesAsync above pays for just to read this same marker.
+    public Task<RebootCheckResult> IsRebootRequiredAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(new RebootCheckResult(File.Exists(RebootRequiredMarker)));
+    }
 }

@@ -8,5 +8,5 @@ namespace UpdateWatch2.Agent.Protocol;
 /// </summary>
 public static class ProtocolVersion
 {
-    public const string Current = "1.1.0";
+    public const string Current = "1.2.0";
 }

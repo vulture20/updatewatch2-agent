@@ -44,4 +44,20 @@ public interface IUpdateChecker
     /// since it never runs an installer at all).
     /// </summary>
     Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// A lightweight, standalone check of the same "a restart is needed"
+    /// signal <see cref="CheckAsync"/> already reports as part of a full
+    /// search — decoupled so <c>HeartbeatWorker</c> can poll it on its own,
+    /// far shorter cadence instead of waiting for <see cref="CheckAsync"/>'s
+    /// coarser one, at the user's explicit request ("Der Check, ob ein
+    /// Neustart nötig ist, sollte öfter stattfinden."). Cheap on every
+    /// platform (a cached COM property read on Windows, a file-existence
+    /// check on Debian-derived Linux, a local subprocess spawn on RPM-based
+    /// Linux) — what was actually expensive was piggybacking it on the full,
+    /// much slower update search, not the check itself. Not to be confused
+    /// with <c>Reboot.IAgentRebooter</c> — that's an admin *triggering* a
+    /// reboot; this is the agent *detecting* that one is already needed.
+    /// </summary>
+    Task<RebootCheckResult> CheckRebootRequiredAsync(CancellationToken ct = default);
 }

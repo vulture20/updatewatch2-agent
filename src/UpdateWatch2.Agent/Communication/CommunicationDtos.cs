@@ -25,9 +25,18 @@ public record RegisterRequest(string? DnsName, string OperatingSystem, string? I
 /// which .NET implements portably on both Windows and Linux, so no
 /// platform-specific code is needed to report it. Lets an admin actually
 /// confirm a triggered reboot took effect (this value jumping forward to
-/// a recent timestamp on a later heartbeat).
+/// a recent timestamp on a later heartbeat). <see cref="RebootRequired"/>
+/// is a different thing again — not identity metadata, but the OS-level
+/// "a restart is needed to finish already-installed updates" signal
+/// (<c>UpdateCheck.IUpdateChecker.CheckRebootRequiredAsync</c>), riding
+/// this same heartbeat so it can be checked far more often than the full
+/// update-search cycle is worth running, at the user's explicit request
+/// ("Der Check, ob ein Neustart nötig ist, sollte öfter stattfinden.").
+/// Null means "the check itself failed this tick, or hasn't run yet" —
+/// never conflate with a confirmed <c>false</c>, the same discipline
+/// <c>UpdateCheck.RebootCheckResult</c> already enforces one layer down.
 /// </summary>
-public record AliveRequest(string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion, DateTimeOffset? BootTimeUtc = null);
+public record AliveRequest(string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion, DateTimeOffset? BootTimeUtc = null, bool? RebootRequired = null);
 
 /// <summary>
 /// Property names match the server's camelCase JSON output field-for-field

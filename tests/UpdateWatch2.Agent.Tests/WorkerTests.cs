@@ -172,6 +172,40 @@ public class WorkerTests
     }
 
     [Fact]
+    public async Task HeartbeatWorker_sends_a_successful_reboot_checks_result_with_the_alive_call()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel());
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false), onRebootCheck: () => new RebootCheckResult(true));
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(1, checker.RebootCheckCallCount);
+        Assert.True(client.LastRebootRequired);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_sends_null_reboot_required_when_the_check_itself_failed()
+    {
+        // Load-bearing regression test: a failed check must never be
+        // reported as a confirmed false — that would risk overwriting the
+        // server's last-known-good Agent.RebootRequired with a wrong
+        // negative (the same class of bug already fixed once for the full
+        // update check — see RebootCheckResult's own doc comment).
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel());
+        var checker = new FakeUpdateChecker(new UpdateCheckResult([], RebootRequired: false), onRebootCheck: () => RebootCheckResult.Failed());
+
+        var worker = CreateHeartbeatWorker(new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), updateChecker: checker);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Null(client.LastRebootRequired);
+    }
+
+    [Fact]
     public async Task HeartbeatWorker_updates_the_pre_download_policy_state_from_a_successful_heartbeat()
     {
         var cts = new CancellationTokenSource();
@@ -942,13 +976,16 @@ public class WorkerTests
     }
 
     private class FakeUpdateChecker(
-        UpdateCheckResult result, Func<CheckerInstallOutcome>? onInstall = null, Func<PreDownloadResult>? onPreDownload = null) : IUpdateChecker
+        UpdateCheckResult result, Func<CheckerInstallOutcome>? onInstall = null, Func<PreDownloadResult>? onPreDownload = null,
+        Func<RebootCheckResult>? onRebootCheck = null) : IUpdateChecker
     {
         public int InstallCallCount { get; private set; }
 
         public IReadOnlyList<string>? LastInstallPackageIds { get; private set; }
 
         public int PreDownloadCallCount { get; private set; }
+
+        public int RebootCheckCallCount { get; private set; }
 
         public Task<UpdateCheckResult> CheckAsync(CancellationToken ct = default) => Task.FromResult(result);
 
@@ -964,6 +1001,12 @@ public class WorkerTests
         {
             PreDownloadCallCount++;
             return Task.FromResult(onPreDownload is null ? new PreDownloadResult(true) : onPreDownload());
+        }
+
+        public Task<RebootCheckResult> CheckRebootRequiredAsync(CancellationToken ct = default)
+        {
+            RebootCheckCallCount++;
+            return Task.FromResult(onRebootCheck is null ? new RebootCheckResult(false) : onRebootCheck());
         }
     }
 
@@ -1007,6 +1050,8 @@ public class WorkerTests
 
         public int DownloadFileCallCount { get; private set; }
 
+        public bool? LastRebootRequired { get; private set; }
+
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
 
         public Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default) => Task.FromResult(onFetchCaCertificateBundle?.Invoke() ?? []);
@@ -1015,9 +1060,10 @@ public class WorkerTests
             Task.FromResult(onRegister?.Invoke(registrationToken)
                 ?? new RegisterResult(Approved: true, RegistrationToken: null, Certificate: null, ProtocolVersion: null));
 
-        public Task<AliveResult> SendAliveAsync(CancellationToken ct = default)
+        public Task<AliveResult> SendAliveAsync(bool? rebootRequired = null, CancellationToken ct = default)
         {
             SendAliveCallCount++;
+            LastRebootRequired = rebootRequired;
             onSendAlive?.Invoke();
             var outcome = onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success;
             var installRequested = outcome == AliveOutcome.Success && (onInstallRequested?.Invoke(SendAliveCallCount) ?? false);

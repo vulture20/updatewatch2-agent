@@ -72,3 +72,24 @@ public record InstallResult(InstallOutcome Outcome, string? ErrorDetail = null);
 /// never a prerequisite for install to keep working.
 /// </summary>
 public record PreDownloadResult(bool Success, string? ErrorDetail = null);
+
+/// <summary>
+/// Return value of <see cref="IUpdateChecker.CheckRebootRequiredAsync"/> — a
+/// lightweight, standalone check of the same OS-reported "a restart is
+/// needed to finish already-installed updates" signal <see cref="UpdateCheckResult.RebootRequired"/>
+/// already carries, decoupled from the full, far more expensive update
+/// search so it can run on <c>HeartbeatWorker</c>'s much shorter cadence
+/// instead of waiting for <c>UpdateCheckWorker</c>'s. Not to be confused
+/// with <c>Reboot.IAgentRebooter</c> — that's an admin *triggering* a
+/// reboot; this is the agent *detecting* that one is already needed.
+/// Same <see cref="Success"/>/<see cref="ErrorDetail"/> discipline as
+/// <see cref="UpdateCheckResult"/>, for the identical reason: a failed
+/// check must never be reported as a false "no reboot needed" negative —
+/// see <see cref="Failed"/>.
+/// </summary>
+public record RebootCheckResult(bool RebootRequired, bool Success = true, string? ErrorDetail = null)
+{
+    /// <summary>The check itself failed — RebootRequired is a meaningless placeholder, not "confirmed not needed."</summary>
+    public static RebootCheckResult Failed(string? errorDetail = null) =>
+        new(RebootRequired: false, Success: false, ErrorDetail: errorDetail);
+}

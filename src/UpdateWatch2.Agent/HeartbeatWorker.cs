@@ -172,7 +172,8 @@ public class HeartbeatWorker(
 
     private async Task HandleAliveAsync(CancellationToken ct)
     {
-        var result = await serverClient.SendAliveAsync(ct);
+        var rebootRequired = await CheckRebootRequiredAsync(ct);
+        var result = await serverClient.SendAliveAsync(rebootRequired, ct);
         if (result.Outcome != AliveOutcome.CertificateRejected)
         {
             _consecutiveCertificateRejections = 0;
@@ -222,6 +223,43 @@ public class HeartbeatWorker(
 
         SelfHealRejectedCertificate();
         _consecutiveCertificateRejections = 0;
+    }
+
+    /// <summary>
+    /// A fresh, lightweight check of whether a reboot is currently
+    /// required, run on every heartbeat tick rather than waiting for
+    /// <see cref="UpdateCheckWorker"/>'s much coarser cadence — at the
+    /// user's explicit request ("Der Check, ob ein Neustart nötig ist,
+    /// sollte öfter stattfinden."). Cheap on every platform (see
+    /// <see cref="UpdateCheck.IUpdateChecker.CheckRebootRequiredAsync"/>'s
+    /// own doc comment) — what made this impractical before was only ever
+    /// riding along behind the full, much slower update search, not the
+    /// check itself. Its own try/catch, separate from <see cref="HandleAliveAsync"/>'s
+    /// outer one in <see cref="ExecuteAsync"/>: a failure here must not
+    /// prevent the alive call itself from going out — it just means no
+    /// fresh value this tick, returned as null rather than a false
+    /// negative (never risk overwriting the server's last-known-good
+    /// <c>Agent.RebootRequired</c> with a wrong "not needed"). <see cref="UpdateCheck.IUpdateChecker.CheckRebootRequiredAsync"/>
+    /// already catches its own exceptions internally (mirroring
+    /// <c>CheckAsync</c>/<c>InstallAsync</c>/<c>PreDownloadAsync</c>), so
+    /// this catch is belt-and-suspenders, not the primary safety net.
+    /// </summary>
+    private async Task<bool?> CheckRebootRequiredAsync(CancellationToken ct)
+    {
+        try
+        {
+            var result = await updateChecker.CheckRebootRequiredAsync(ct);
+            return result.Success ? result.RebootRequired : null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to check whether a reboot is required");
+            return null;
+        }
     }
 
     /// <summary>

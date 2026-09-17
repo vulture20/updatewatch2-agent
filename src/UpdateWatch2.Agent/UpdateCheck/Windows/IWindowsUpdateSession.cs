@@ -38,4 +38,14 @@ public interface IWindowsUpdateSession
     /// so re-running this on every periodic check stays cheap once caught up.
     /// </summary>
     PreDownloadResult DownloadOnly(CancellationToken ct);
+
+    /// <summary>
+    /// Reads whether a reboot is currently pending, independent of a full
+    /// search — the same underlying COM property <see cref="SearchForUpdates"/>
+    /// already reads, exposed standalone so it can run on a much shorter
+    /// cadence than a full search is worth paying for. See
+    /// <see cref="WuaUpdateSession"/> for why this is cheap even run often
+    /// (a locally cached WUAgent registry value, not a fresh scan).
+    /// </summary>
+    RebootCheckResult CheckRebootRequired(CancellationToken ct);
 }

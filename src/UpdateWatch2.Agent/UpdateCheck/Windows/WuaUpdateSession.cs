@@ -245,6 +245,12 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
         return rebootRequired;
     }
 
+    public RebootCheckResult CheckRebootRequired(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return new RebootCheckResult(IsRebootRequired());
+    }
+
     private static dynamic CreateSession() =>
         Activator.CreateInstance(Type.GetTypeFromProgID("Microsoft.Update.Session")!)!;
 

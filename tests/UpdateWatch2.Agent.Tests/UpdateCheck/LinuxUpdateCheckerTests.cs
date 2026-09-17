@@ -83,16 +83,45 @@ public class LinuxUpdateCheckerTests
         Assert.Equal(["bash"], received);
     }
 
+    [Fact]
+    public async Task CheckRebootRequiredAsync_returns_the_sessions_result()
+    {
+        var result = new RebootCheckResult(true);
+        var checker = new LinuxUpdateChecker(new FakeSession(rebootCheckResult: result), NullLogger<LinuxUpdateChecker>.Instance);
+
+        var actual = await checker.CheckRebootRequiredAsync();
+
+        Assert.Same(result, actual);
+    }
+
+    [Fact]
+    public async Task CheckRebootRequiredAsync_reports_failure_and_the_exception_message_when_the_session_throws()
+    {
+        var checker = new LinuxUpdateChecker(
+            new FakeSession(onRebootCheck: () => throw new InvalidOperationException("simulated apt failure")),
+            NullLogger<LinuxUpdateChecker>.Instance);
+
+        var actual = await checker.CheckRebootRequiredAsync();
+
+        Assert.False(actual.Success);
+        Assert.Equal("simulated apt failure", actual.ErrorDetail);
+    }
+
     private class FakeSession(
         UpdateCheckResult? searchResult = null,
         InstallResult? installResult = null,
+        RebootCheckResult? rebootCheckResult = null,
         Func<UpdateCheckResult>? onSearch = null,
-        Func<IReadOnlyList<string>?, InstallResult>? onInstall = null) : ILinuxUpdateSession
+        Func<IReadOnlyList<string>?, InstallResult>? onInstall = null,
+        Func<RebootCheckResult>? onRebootCheck = null) : ILinuxUpdateSession
     {
         public Task<UpdateCheckResult> SearchForUpdatesAsync(CancellationToken ct) =>
             Task.FromResult(onSearch is not null ? onSearch() : searchResult ?? new UpdateCheckResult([], RebootRequired: false));
 
         public Task<InstallResult> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct) =>
             Task.FromResult(onInstall is not null ? onInstall(packageNames) : installResult ?? new InstallResult(InstallOutcome.Succeeded));
+
+        public Task<RebootCheckResult> IsRebootRequiredAsync(CancellationToken ct) =>
+            Task.FromResult(onRebootCheck is not null ? onRebootCheck() : rebootCheckResult ?? new RebootCheckResult(false));
     }
 }

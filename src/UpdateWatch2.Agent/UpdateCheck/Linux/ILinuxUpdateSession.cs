@@ -24,4 +24,14 @@ public interface ILinuxUpdateSession
     /// there's no "can't be individually named" fallback needed here).
     /// </summary>
     Task<InstallResult> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct);
+
+    /// <summary>
+    /// Reads whether a reboot is currently pending, independent of a full
+    /// search — the same underlying signal <see cref="SearchForUpdatesAsync"/>
+    /// already reports as part of its result, exposed standalone so it can
+    /// run on a much shorter cadence than a full search is worth paying
+    /// for. See <see cref="AptUpdateSession"/>/<see cref="DnfUpdateSession"/>
+    /// for how cheap this is per platform.
+    /// </summary>
+    Task<RebootCheckResult> IsRebootRequiredAsync(CancellationToken ct);
 }

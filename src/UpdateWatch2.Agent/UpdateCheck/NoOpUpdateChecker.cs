@@ -25,4 +25,11 @@ public class NoOpUpdateChecker(ILogger<NoOpUpdateChecker> logger) : IUpdateCheck
     // warning about every periodic check.
     public Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default) =>
         Task.FromResult(new PreDownloadResult(true));
+
+    // No-op, no warning logged — matching PreDownloadAsync's convention
+    // above: nothing meaningful to check on a platform with no real
+    // update checker, and this would otherwise warn on every heartbeat
+    // (far more often than CheckAsync's own periodic warning).
+    public Task<RebootCheckResult> CheckRebootRequiredAsync(CancellationToken ct = default) =>
+        Task.FromResult(new RebootCheckResult(false));
 }

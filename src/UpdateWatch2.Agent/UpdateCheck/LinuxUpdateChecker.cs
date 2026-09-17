@@ -52,4 +52,17 @@ public class LinuxUpdateChecker(ILinuxUpdateSession session, ILogger<LinuxUpdate
     // doesn't act on yet.
     public Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default) =>
         Task.FromResult(new PreDownloadResult(true));
+
+    public async Task<RebootCheckResult> CheckRebootRequiredAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await session.IsRebootRequiredAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Checking whether a reboot is required failed");
+            return RebootCheckResult.Failed(ex.Message);
+        }
+    }
 }

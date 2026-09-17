@@ -110,4 +110,16 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
             return false;
         }
     }
+
+    // Public interface member — resolves the binary fresh (two cheap
+    // File.Exists calls) and delegates to the same private helper
+    // SearchForUpdatesAsync already uses, so this can run standalone on
+    // HeartbeatWorker's much shorter cadence without paying for
+    // check-update first. Confirmed with the user: a needs-restarting
+    // subprocess spawn on every heartbeat (~48x more often than the old
+    // every-240-minutes cadence) is still local-only and sub-second —
+    // accepted as negligible rather than special-cased with a lighter
+    // interval.
+    public async Task<RebootCheckResult> IsRebootRequiredAsync(CancellationToken ct) =>
+        new(await IsRebootRequiredAsync(ResolveBinary(), ct));
 }

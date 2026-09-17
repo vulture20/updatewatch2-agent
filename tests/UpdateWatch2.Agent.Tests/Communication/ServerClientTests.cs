@@ -64,6 +64,40 @@ public class ServerClientTests
     }
 
     [Fact]
+    public async Task SendAliveAsync_sends_the_reboot_required_value_when_given_one()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        await client.SendAliveAsync(rebootRequired: true);
+
+        Assert.NotNull(handler.LastRequestBody);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.True(doc.RootElement.GetProperty("rebootRequired").GetBoolean());
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_omits_reboot_required_as_null_by_default()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        await client.SendAliveAsync();
+
+        Assert.NotNull(handler.LastRequestBody);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("rebootRequired").ValueKind);
+    }
+
+    [Fact]
     public async Task SendAliveAsync_parses_an_agent_update_offer_when_the_server_includes_one()
     {
         // updatewatch2-agent#14: the offer's shape (nested asset objects,

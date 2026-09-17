@@ -59,4 +59,18 @@ public class WindowsUpdateChecker(IWindowsUpdateSession session, ILogger<Windows
                 return new PreDownloadResult(false, ex.Message);
             }
         }, ct);
+
+    public Task<RebootCheckResult> CheckRebootRequiredAsync(CancellationToken ct = default) =>
+        Task.Run(() =>
+        {
+            try
+            {
+                return session.CheckRebootRequired(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Checking whether a reboot is required failed");
+                return RebootCheckResult.Failed(ex.Message);
+            }
+        }, ct);
 }

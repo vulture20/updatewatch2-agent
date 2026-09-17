@@ -45,7 +45,12 @@ public interface IServerClient
     /// release to self-update to, if one is known and enabled server-side
     /// (updatewatch2-server#14/updatewatch2-agent#14).
     /// </summary>
-    Task<AliveResult> SendAliveAsync(CancellationToken ct = default);
+    /// <param name="rebootRequired">
+    /// The result of a fresh, lightweight reboot-required check this tick —
+    /// null when the check itself failed or hasn't run, never a confirmed
+    /// false negative. See <see cref="Communication.AliveRequest.RebootRequired"/>.
+    /// </param>
+    Task<AliveResult> SendAliveAsync(bool? rebootRequired = null, CancellationToken ct = default);
 
     Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default);
 
