@@ -208,10 +208,19 @@ public class WorkerTests
     [Fact]
     public async Task HeartbeatWorker_updates_the_pre_download_policy_state_from_a_successful_heartbeat()
     {
+        // This suite runs on Linux, so HeartbeatWorker's own
+        // OperatingSystem.IsWindows() platform check picks the Linux field
+        // here, not the Windows one — a real, live check of that branch,
+        // not just a theoretical one (mirroring OperatingSystemDescriberTests'
+        // own precedent for asserting this explicitly). The Windows branch
+        // is exercised by this same production code path but can't be
+        // covered by this test suite, the same standing limitation every
+        // other Windows-vs-Linux behavior in this codebase already has.
+        Assert.False(OperatingSystem.IsWindows());
         var cts = new CancellationTokenSource();
         var client = new FakeServerClient(
             onSendAlive: () => cts.Cancel(),
-            onPreDownloadWindowsUpdatesEnabled: _ => true);
+            onPreDownloadLinuxUpdatesEnabled: _ => true);
         var policyState = new PreDownloadPolicyState();
 
         var worker = CreateHeartbeatWorker(
@@ -225,12 +234,36 @@ public class WorkerTests
     [Fact]
     public async Task HeartbeatWorker_turns_the_pre_download_policy_state_off_when_the_server_reports_it_disabled()
     {
+        Assert.False(OperatingSystem.IsWindows());
         var cts = new CancellationTokenSource();
         var client = new FakeServerClient(
             onSendAlive: () => cts.Cancel(),
-            onPreDownloadWindowsUpdatesEnabled: _ => false);
+            onPreDownloadLinuxUpdatesEnabled: _ => false);
         var policyState = new PreDownloadPolicyState();
         policyState.Update(true);
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), preDownloadPolicyState: policyState);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.False(policyState.Enabled);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_ignores_the_Windows_pre_download_flag_on_a_non_Windows_agent()
+    {
+        // The server sends BOTH platform-specific flags on every heartbeat
+        // regardless of which one actually applies — confirms this agent
+        // (running on Linux, per the assertion above) never picks up the
+        // Windows-only field even when it's the one reporting true.
+        Assert.False(OperatingSystem.IsWindows());
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onPreDownloadWindowsUpdatesEnabled: _ => true,
+            onPreDownloadLinuxUpdatesEnabled: _ => false);
+        var policyState = new PreDownloadPolicyState();
 
         var worker = CreateHeartbeatWorker(
             new AgentOptions { AliveIntervalMinutes = 60 }, client, ReadyCertificateState(), preDownloadPolicyState: policyState);
@@ -1176,7 +1209,8 @@ public class WorkerTests
         Func<int, string?>? onDesiredLogLevel = null,
         Func<int, int?>? onDesiredUpdateCheckIntervalMinutes = null,
         Func<int, int?>? onDesiredUpdateCheckJitterSeconds = null,
-        Func<int, int?>? onDesiredAliveIntervalMinutes = null) : IServerClient
+        Func<int, int?>? onDesiredAliveIntervalMinutes = null,
+        Func<int, bool>? onPreDownloadLinuxUpdatesEnabled = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
@@ -1224,6 +1258,7 @@ public class WorkerTests
             var certificateRotationPending = outcome == AliveOutcome.Success && (onCertificateRotationPending?.Invoke(SendAliveCallCount) ?? false);
             var rebootRequested = outcome == AliveOutcome.Success && (onRebootRequested?.Invoke(SendAliveCallCount) ?? false);
             var preDownloadWindowsUpdatesEnabled = outcome == AliveOutcome.Success && (onPreDownloadWindowsUpdatesEnabled?.Invoke(SendAliveCallCount) ?? false);
+            var preDownloadLinuxUpdatesEnabled = outcome == AliveOutcome.Success && (onPreDownloadLinuxUpdatesEnabled?.Invoke(SendAliveCallCount) ?? false);
             var desiredLogLevel = outcome == AliveOutcome.Success ? onDesiredLogLevel?.Invoke(SendAliveCallCount) : null;
             var desiredUpdateCheckIntervalMinutes = outcome == AliveOutcome.Success ? onDesiredUpdateCheckIntervalMinutes?.Invoke(SendAliveCallCount) : null;
             var desiredUpdateCheckJitterSeconds = outcome == AliveOutcome.Success ? onDesiredUpdateCheckJitterSeconds?.Invoke(SendAliveCallCount) : null;
@@ -1231,7 +1266,7 @@ public class WorkerTests
             return Task.FromResult(new AliveResult(
                 outcome, installRequested, installUpdateIds, agentUpdateAvailable, certificateRotationPending, rebootRequested,
                 preDownloadWindowsUpdatesEnabled, desiredLogLevel, desiredUpdateCheckIntervalMinutes, desiredUpdateCheckJitterSeconds,
-                desiredAliveIntervalMinutes));
+                desiredAliveIntervalMinutes, preDownloadLinuxUpdatesEnabled));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)

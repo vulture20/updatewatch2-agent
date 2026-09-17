@@ -4,19 +4,25 @@ using UpdateWatch2.Agent.UpdateCheck.Linux;
 namespace UpdateWatch2.Agent.Tests.UpdateCheck.Linux;
 
 /// <summary>
-/// Covers <see cref="AptUpdateSession.BuildInstallArgs"/> only — the pure
-/// argument-building half of <see cref="AptUpdateSession"/>, pulled out
-/// specifically so this could be unit tested; the actual
+/// Covers <see cref="AptUpdateSession.BuildInstallArgs"/> and
+/// <see cref="AptUpdateSession.BuildDownloadOnlyArgs"/> — the pure
+/// argument-building halves of <see cref="AptUpdateSession"/>, pulled out
+/// specifically so they could be unit tested; the actual
 /// <c>apt-get</c>-shelling-out half remains untested here, same as the
-/// rest of this class (see its own doc comment). Added after an automated
-/// security review flagged the original inline version as an
-/// argument-injection risk (a package name starting with <c>-</c> could
-/// be parsed as a flag rather than a positional argument without a
-/// <c>--</c> end-of-options marker) — these tests are what actually
-/// proves that marker is present. Marked <c>[SupportedOSPlatform("linux")]</c>
-/// like <c>LinuxFileConfigStoreTests</c>/<c>LinuxClientCertificateStoreTests</c>
-/// — the method under test is pure and platform-agnostic in practice, but
-/// its containing class carries the same attribute, and this project's CI
+/// rest of this class (see its own doc comment). <c>BuildInstallArgs</c>'s
+/// tests were added after an automated security review flagged the
+/// original inline version as an argument-injection risk (a package name
+/// starting with <c>-</c> could be parsed as a flag rather than a
+/// positional argument without a <c>--</c> end-of-options marker) — these
+/// tests are what actually proves that marker is present.
+/// <c>BuildDownloadOnlyArgs</c> takes no caller-supplied input at all (it
+/// always downloads everything currently pending, mirroring
+/// <c>Windows.IWindowsUpdateSession.DownloadOnly</c>'s own semantics), so
+/// the same injection concern doesn't apply to it. Marked
+/// <c>[SupportedOSPlatform("linux")]</c> like
+/// <c>LinuxFileConfigStoreTests</c>/<c>LinuxClientCertificateStoreTests</c>
+/// — the methods under test are pure and platform-agnostic in practice, but
+/// their containing class carries the same attribute, and this project's CI
 /// already runs entirely on Linux (ubuntu-latest) anyway.
 /// </summary>
 [SupportedOSPlatform("linux")]
@@ -51,5 +57,13 @@ public class AptUpdateSessionTests
         var separatorIndex = Array.IndexOf(args, "--");
         Assert.True(separatorIndex >= 0, "Expected a \"--\" end-of-options marker in the built arguments.");
         Assert.Equal(["--allow-downgrades", "nginx"], args[(separatorIndex + 1)..]);
+    }
+
+    [Fact]
+    public void BuildDownloadOnlyArgs_downloads_everything_pending_without_installing()
+    {
+        var args = AptUpdateSession.BuildDownloadOnlyArgs();
+
+        Assert.Equal(["-y", "--download-only", "dist-upgrade"], args);
     }
 }

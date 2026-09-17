@@ -84,6 +84,30 @@ public class LinuxUpdateCheckerTests
     }
 
     [Fact]
+    public async Task PreDownloadAsync_returns_the_sessions_result()
+    {
+        var result = new PreDownloadResult(true);
+        var checker = new LinuxUpdateChecker(new FakeSession(preDownloadResult: result), NullLogger<LinuxUpdateChecker>.Instance);
+
+        var actual = await checker.PreDownloadAsync();
+
+        Assert.Same(result, actual);
+    }
+
+    [Fact]
+    public async Task PreDownloadAsync_reports_failure_and_the_exception_message_when_the_session_throws()
+    {
+        var checker = new LinuxUpdateChecker(
+            new FakeSession(onPreDownload: () => throw new InvalidOperationException("simulated apt failure")),
+            NullLogger<LinuxUpdateChecker>.Instance);
+
+        var actual = await checker.PreDownloadAsync();
+
+        Assert.False(actual.Success);
+        Assert.Equal("simulated apt failure", actual.ErrorDetail);
+    }
+
+    [Fact]
     public async Task CheckRebootRequiredAsync_returns_the_sessions_result()
     {
         var result = new RebootCheckResult(true);
@@ -111,9 +135,11 @@ public class LinuxUpdateCheckerTests
         UpdateCheckResult? searchResult = null,
         InstallResult? installResult = null,
         RebootCheckResult? rebootCheckResult = null,
+        PreDownloadResult? preDownloadResult = null,
         Func<UpdateCheckResult>? onSearch = null,
         Func<IReadOnlyList<string>?, InstallResult>? onInstall = null,
-        Func<RebootCheckResult>? onRebootCheck = null) : ILinuxUpdateSession
+        Func<RebootCheckResult>? onRebootCheck = null,
+        Func<PreDownloadResult>? onPreDownload = null) : ILinuxUpdateSession
     {
         public Task<UpdateCheckResult> SearchForUpdatesAsync(CancellationToken ct) =>
             Task.FromResult(onSearch is not null ? onSearch() : searchResult ?? new UpdateCheckResult([], RebootRequired: false));
@@ -123,5 +149,8 @@ public class LinuxUpdateCheckerTests
 
         public Task<RebootCheckResult> IsRebootRequiredAsync(CancellationToken ct) =>
             Task.FromResult(onRebootCheck is not null ? onRebootCheck() : rebootCheckResult ?? new RebootCheckResult(false));
+
+        public Task<PreDownloadResult> DownloadOnlyAsync(CancellationToken ct) =>
+            Task.FromResult(onPreDownload is not null ? onPreDownload() : preDownloadResult ?? new PreDownloadResult(true));
     }
 }

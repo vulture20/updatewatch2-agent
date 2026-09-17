@@ -189,7 +189,15 @@ public class HeartbeatWorker(
                 // not only turning it on. UpdateCheckWorker reads this on
                 // its own, much coarser cadence (see IPreDownloadPolicyState's
                 // own doc comment for why it isn't itself polled here).
-                preDownloadPolicyState.Update(result.PreDownloadWindowsUpdatesEnabled);
+                // Every heartbeat response carries BOTH the Windows and the
+                // Linux toggle regardless of which platform this agent
+                // actually is (agent v1.0.16) — IPreDownloadPolicyState
+                // itself stays a single platform-agnostic bool, so the
+                // platform selection happens right here, once, the same
+                // OperatingSystem.IsWindows() check OperatingSystemDescriber
+                // already uses elsewhere in this codebase.
+                preDownloadPolicyState.Update(
+                    OperatingSystem.IsWindows() ? result.PreDownloadWindowsUpdatesEnabled : result.PreDownloadLinuxUpdatesEnabled);
 
                 ApplyPushedSettings(result);
 

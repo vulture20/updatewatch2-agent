@@ -119,4 +119,32 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(new RebootCheckResult(File.Exists(RebootRequiredMarker)));
     }
+
+    /// <summary>
+    /// Always everything currently pending, matching <c>DownloadOnlyAsync</c>'s
+    /// own doc comment — no <c>--</c>/package-name argument-injection
+    /// concern here the way <see cref="BuildInstallArgs"/> has, since this
+    /// never takes a caller-supplied package list at all.
+    /// </summary>
+    public static string[] BuildDownloadOnlyArgs() => ["-y", "--download-only", "dist-upgrade"];
+
+    public async Task<PreDownloadResult> DownloadOnlyAsync(CancellationToken ct)
+    {
+        var args = BuildDownloadOnlyArgs();
+        var result = await ShellCommand.RunAsync(
+            "apt-get",
+            args,
+            ct,
+            extraEnvironment: new Dictionary<string, string> { ["DEBIAN_FRONTEND"] = "noninteractive" },
+            logger: logger);
+
+        if (result.ExitCode != 0)
+        {
+            var stdErr = result.StandardError.Trim();
+            logger.LogWarning("apt-get {Args} exited with code {ExitCode}: {StdErr}", string.Join(' ', args), result.ExitCode, stdErr);
+            return new PreDownloadResult(false, $"apt-get exited with code {result.ExitCode}: {stdErr}");
+        }
+
+        return new PreDownloadResult(true);
+    }
 }

@@ -150,7 +150,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
                 AliveOutcome.Success, body?.InstallRequested ?? false, body?.InstallUpdateIds, body?.AgentUpdateAvailable,
                 body?.CertificateRotationPending ?? false, body?.RebootRequested ?? false,
                 body?.PreDownloadWindowsUpdatesEnabled ?? false, body?.DesiredLogLevel, body?.DesiredUpdateCheckIntervalMinutes,
-                body?.DesiredUpdateCheckJitterSeconds, body?.DesiredAliveIntervalMinutes);
+                body?.DesiredUpdateCheckJitterSeconds, body?.DesiredAliveIntervalMinutes, body?.PreDownloadLinuxUpdatesEnabled ?? false);
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -169,7 +169,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         bool InstallRequested, IReadOnlyList<string>? InstallUpdateIds, AgentUpdateOffer? AgentUpdateAvailable,
         bool CertificateRotationPending, bool RebootRequested, bool PreDownloadWindowsUpdatesEnabled,
         string? DesiredLogLevel, int? DesiredUpdateCheckIntervalMinutes, int? DesiredUpdateCheckJitterSeconds,
-        int? DesiredAliveIntervalMinutes);
+        int? DesiredAliveIntervalMinutes, bool PreDownloadLinuxUpdatesEnabled);
 
     /// <summary>
     /// Computes when this machine last booted from <see cref="Environment.TickCount64"/>

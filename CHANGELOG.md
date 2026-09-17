@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.16] - 2026-09-17
+
+### Added
+
+- **Real apt/dnf pre-downloading, closing the Linux gap in `IUpdateChecker.PreDownloadAsync` — at the user's explicit request ("Setze den Pre-Download auch für Linux um.")**, protocol bumped to `1.5.0`. `ILinuxUpdateSession` gains `DownloadOnlyAsync`, implemented for both real sessions: `AptUpdateSession` runs `apt-get -y --download-only dist-upgrade` (populates the apt cache without unpacking/installing); `DnfUpdateSession` runs `<dnf|yum> -y update --downloadonly` (`--downloadonly` is core to dnf, but requires the separate `yum-plugin-downloadonly` package on yum — if missing, the command fails and this reports it as an ordinary `PreDownloadResult` failure rather than crashing). Both always download everything currently pending — mirroring `WuaUpdateSession.DownloadOnly`'s own semantics — there's no selective/partial pre-download concept, unlike `DownloadAndInstallAsync`'s optional package-name scoping. `LinuxUpdateChecker.PreDownloadAsync` is no longer a no-op, wrapping the session call in the same try/catch shape `WindowsUpdateChecker.PreDownloadAsync` already uses. `AliveRequest`/`AliveResult` gain a second, independent `PreDownloadLinuxUpdatesEnabled` field alongside the existing Windows one — `HeartbeatWorker` resolves which one applies to this agent via a single `OperatingSystem.IsWindows()` check (the same un-abstracted pattern `OperatingSystemDescriber` already uses elsewhere in this codebase) before writing into the still-platform-agnostic `IPreDownloadPolicyState`, so `UpdateCheckWorker` and every `IUpdateChecker` implementation stay unaware there are two toggles on the wire at all. **Not live-verified against a real apt/dnf host** — same standing caveat `DownloadAndInstallAsync`'s own install half already carries (this project's dev sandbox is Debian-based and running a real download/install here would mutate it); only the pure argument-building halves (`BuildDownloadOnlyArgs`) have real unit test coverage.
+
 ## [1.0.15] - 2026-09-17
 
 ### Added

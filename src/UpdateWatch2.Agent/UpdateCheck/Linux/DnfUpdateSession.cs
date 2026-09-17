@@ -122,4 +122,34 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
     // interval.
     public async Task<RebootCheckResult> IsRebootRequiredAsync(CancellationToken ct) =>
         new(await IsRebootRequiredAsync(ResolveBinary(), ct));
+
+    /// <summary>
+    /// Always everything currently pending — see
+    /// <c>ILinuxUpdateSession.DownloadOnlyAsync</c>'s own doc comment.
+    /// <c>--downloadonly</c> is a core dnf option (no plugin needed); on
+    /// yum it requires the separate <c>yum-plugin-downloadonly</c> package
+    /// — if that's missing, the command fails and this reports it as an
+    /// ordinary <see cref="PreDownloadResult"/> failure rather than
+    /// crashing, the same honest-best-effort treatment
+    /// <see cref="IsRebootRequiredAsync(CancellationToken)"/>'s own
+    /// needs-restarting fallback already applies to a missing optional
+    /// tool.
+    /// </summary>
+    public static string[] BuildDownloadOnlyArgs() => ["-y", "update", "--downloadonly"];
+
+    public async Task<PreDownloadResult> DownloadOnlyAsync(CancellationToken ct)
+    {
+        var binary = ResolveBinary();
+        var args = BuildDownloadOnlyArgs();
+
+        var result = await ShellCommand.RunAsync(binary, args, ct, logger: logger);
+        if (result.ExitCode != 0)
+        {
+            var stdErr = result.StandardError.Trim();
+            logger.LogWarning("{Binary} {Args} exited with code {ExitCode}: {StdErr}", binary, string.Join(' ', args), result.ExitCode, stdErr);
+            return new PreDownloadResult(false, $"{binary} exited with code {result.ExitCode}: {stdErr}");
+        }
+
+        return new PreDownloadResult(true);
+    }
 }

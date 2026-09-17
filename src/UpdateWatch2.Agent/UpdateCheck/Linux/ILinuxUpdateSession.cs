@@ -34,4 +34,17 @@ public interface ILinuxUpdateSession
     /// for how cheap this is per platform.
     /// </summary>
     Task<RebootCheckResult> IsRebootRequiredAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Proactively downloads whatever is currently pending into the package
+    /// manager's own local cache, without installing it — the Linux
+    /// counterpart to <c>Windows.IWindowsUpdateSession.DownloadOnly</c>
+    /// (agent v1.0.16, at the user's explicit request — "Setze den
+    /// Pre-Download auch für Linux um."). Always downloads everything
+    /// currently pending, mirroring <c>DownloadOnly</c>'s own semantics —
+    /// there is no selective/partial pre-download concept, unlike
+    /// <see cref="DownloadAndInstallAsync"/>'s optional package-name
+    /// scoping.
+    /// </summary>
+    Task<PreDownloadResult> DownloadOnlyAsync(CancellationToken ct);
 }

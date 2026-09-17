@@ -148,7 +148,15 @@ public record AliveResult(
     string? DesiredLogLevel = null,
     int? DesiredUpdateCheckIntervalMinutes = null,
     int? DesiredUpdateCheckJitterSeconds = null,
-    int? DesiredAliveIntervalMinutes = null)
+    int? DesiredAliveIntervalMinutes = null,
+    // The Linux counterpart to PreDownloadWindowsUpdatesEnabled above
+    // (agent v1.0.16, at the user's explicit request — "Setze den
+    // Pre-Download auch für Linux um.") — a genuinely independent
+    // fleet-wide toggle, not derived from the Windows one. A Windows agent
+    // receives this field too but never reads it, the same "extra field,
+    // simply unused on this platform" pattern the Windows flag already
+    // established for a Linux agent.
+    bool PreDownloadLinuxUpdatesEnabled = false)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }

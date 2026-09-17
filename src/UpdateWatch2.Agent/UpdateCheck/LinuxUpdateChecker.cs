@@ -42,16 +42,21 @@ public class LinuxUpdateChecker(ILinuxUpdateSession session, ILogger<LinuxUpdate
         }
     }
 
-    // No-op for now — pre-downloading via apt/dnf isn't implemented yet
-    // (the feature this supports, updatewatch2-server's Pre-download
-    // Windows updates toggle, is scoped Windows-only for its first
-    // version). Always reports success rather than an error, matching
-    // NoOpUpdateChecker's own "nothing to do here" convention, so a
-    // Linux agent doesn't log a spurious warning every periodic check
-    // just because the server enabled a fleet-wide toggle this platform
-    // doesn't act on yet.
-    public Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default) =>
-        Task.FromResult(new PreDownloadResult(true));
+    // Real apt/dnf pre-downloading (agent v1.0.16, at the user's explicit
+    // request — "Setze den Pre-Download auch für Linux um."), mirroring
+    // WindowsUpdateChecker.PreDownloadAsync's own try/catch shape exactly.
+    public async Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await session.DownloadOnlyAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Pre-downloading Linux updates failed");
+            return new PreDownloadResult(false, ex.Message);
+        }
+    }
 
     public async Task<RebootCheckResult> CheckRebootRequiredAsync(CancellationToken ct = default)
     {

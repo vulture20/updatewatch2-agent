@@ -35,12 +35,15 @@ public interface IUpdateChecker
     /// without installing it — driven by <c>UpdateCheckWorker</c> right
     /// after its own periodic <see cref="CheckAsync"/>/report succeeds, only
     /// when the server's admin-configurable pre-download setting is
-    /// currently enabled (see <c>UpdateCheck.IPreDownloadPolicyState</c>).
-    /// Windows-only for now (<c>WindowsUpdateChecker</c>) — <c>LinuxUpdateChecker</c>/
-    /// <c>NoOpUpdateChecker</c> implement this as a no-op that always
-    /// reports success, since there's nothing to do on those platforms yet.
-    /// Never installs anything (see <see cref="InstallAsync"/>'s own
-    /// reboot-related rule — this method doesn't even touch that rule,
+    /// currently enabled for this agent's own platform (see
+    /// <c>UpdateCheck.IPreDownloadPolicyState</c>). Implemented for both
+    /// Windows (<c>WindowsUpdateChecker</c>/COM's <c>DownloadOnly</c>) and
+    /// Linux (<c>LinuxUpdateChecker</c>/apt's <c>--download-only</c>, dnf's
+    /// <c>--downloadonly</c> — agent v1.0.16); <c>NoOpUpdateChecker</c> (a
+    /// Linux host with neither known package manager) implements this as a
+    /// no-op that always reports success, since there's nothing to do at
+    /// all on that host. Never installs anything (see <see cref="InstallAsync"/>'s
+    /// own reboot-related rule — this method doesn't even touch that rule,
     /// since it never runs an installer at all).
     /// </summary>
     Task<PreDownloadResult> PreDownloadAsync(CancellationToken ct = default);
