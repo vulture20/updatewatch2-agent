@@ -53,9 +53,10 @@ public interface IServerClient
     /// <param name="actualLogLevel">This agent's own current, actually-effective LogLevel — see <see cref="Communication.AliveRequest.ActualLogLevel"/>.</param>
     /// <param name="actualUpdateCheckIntervalMinutes">This agent's own current update-check interval — see <see cref="Communication.AliveRequest.ActualUpdateCheckIntervalMinutes"/>.</param>
     /// <param name="actualUpdateCheckJitterSeconds">This agent's own current update-check jitter — see <see cref="Communication.AliveRequest.ActualUpdateCheckJitterSeconds"/>.</param>
+    /// <param name="actualAliveIntervalMinutes">This agent's own current alive-heartbeat interval — see <see cref="Communication.AliveRequest.ActualAliveIntervalMinutes"/>.</param>
     Task<AliveResult> SendAliveAsync(
         bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
-        int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default);
+        int? actualUpdateCheckJitterSeconds = null, int? actualAliveIntervalMinutes = null, CancellationToken ct = default);
 
     Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default);
 

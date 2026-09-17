@@ -36,18 +36,21 @@ public record RegisterRequest(string? DnsName, string OperatingSystem, string? I
 /// never conflate with a confirmed <c>false</c>, the same discipline
 /// <c>UpdateCheck.RebootCheckResult</c> already enforces one layer down.
 /// <see cref="ActualLogLevel"/>/<see cref="ActualUpdateCheckIntervalMinutes"/>/
-/// <see cref="ActualUpdateCheckJitterSeconds"/> are this agent's own
-/// current, actually-effective values for the three settings the server can
-/// push a per-agent override for — sent every heartbeat regardless of
-/// whether an override is active, so the admin UI can show what's really
-/// running even after a manual registry/config-file edit, at the user's
-/// explicit request ("Änderungen an Registry bzw. Configfile sollen
-/// wiederum am Server zu sehen sein.").
+/// <see cref="ActualUpdateCheckJitterSeconds"/>/<see cref="ActualAliveIntervalMinutes"/>
+/// are this agent's own current, actually-effective values for the settings
+/// the server can push a per-agent override for — sent every heartbeat
+/// regardless of whether an override is active, so the admin UI can show
+/// what's really running even after a manual registry/config-file edit, at
+/// the user's explicit request ("Änderungen an Registry bzw. Configfile
+/// sollen wiederum am Server zu sehen sein."). <see cref="ActualAliveIntervalMinutes"/>
+/// was added later than the other three (agent v1.0.15, at the user's
+/// explicit request — "Mache bitte auch die Client-Einstellungen für den
+/// Alive-Intervall in dem Agent-Einstellungsdialog verfügbar.").
 /// </summary>
 public record AliveRequest(
     string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion, DateTimeOffset? BootTimeUtc = null,
     bool? RebootRequired = null, string? ActualLogLevel = null, int? ActualUpdateCheckIntervalMinutes = null,
-    int? ActualUpdateCheckJitterSeconds = null);
+    int? ActualUpdateCheckJitterSeconds = null, int? ActualAliveIntervalMinutes = null);
 
 /// <summary>
 /// Property names match the server's camelCase JSON output field-for-field
@@ -144,7 +147,8 @@ public record AliveResult(
     // timestamp-based conflict resolution.
     string? DesiredLogLevel = null,
     int? DesiredUpdateCheckIntervalMinutes = null,
-    int? DesiredUpdateCheckJitterSeconds = null)
+    int? DesiredUpdateCheckJitterSeconds = null,
+    int? DesiredAliveIntervalMinutes = null)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }

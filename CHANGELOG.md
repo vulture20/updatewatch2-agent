@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.15] - 2026-09-17
+
+### Added
+
+- **The server can now also push a per-agent alive-heartbeat interval override, alongside the existing LogLevel/update-check interval/jitter — at the user's explicit request** ("Mache bitte auch die Client-Einstellungen für den Alive-Intervall in dem Agent-Einstellungsdialog verfügbar."), protocol bumped to `1.4.0`. `Communication.AliveRequest` gains `ActualAliveIntervalMinutes` (this agent's own current value, sent every heartbeat for admin visibility, same reasoning as the other three); `AliveResult` gains `DesiredAliveIntervalMinutes` (the server's pushed value, null = no override). `HeartbeatWorker.ApplyPushedSettings` applies it the exact same way as the update-check interval/jitter fields already work: mutate the shared `AgentOptions` singleton, persist via `IAgentConfigStore.Save`. Live-applied for free, with genuinely zero extra plumbing needed — this very worker's own `ExecuteAsync` loop reads `options.AliveIntervalMinutes` fresh for its `Task.Delay` right after `ApplyPushedSettings` returns on the same tick, so a pushed change takes effect on the very next wait, not the one after. The new debug logging added in v1.0.14 for this same mechanism (config sent/received, config written) was extended to include this fourth field too, rather than left as a silent gap in exactly the diagnostics that release just added.
+
 ## [1.0.14] - 2026-09-17
 
 ### Added

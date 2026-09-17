@@ -447,7 +447,8 @@ public class RegistrationWorkerTests : IDisposable
 
         public Task<AliveResult> SendAliveAsync(
             bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
-            int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default) => Task.FromResult(AliveResult.From(AliveOutcome.Success));
+            int? actualUpdateCheckJitterSeconds = null, int? actualAliveIntervalMinutes = null, CancellationToken ct = default) =>
+            Task.FromResult(AliveResult.From(AliveOutcome.Success));
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default) => Task.CompletedTask;
 

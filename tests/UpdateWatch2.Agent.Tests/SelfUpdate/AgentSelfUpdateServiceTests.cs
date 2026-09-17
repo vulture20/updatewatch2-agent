@@ -264,7 +264,8 @@ public class AgentSelfUpdateServiceTests : IDisposable
 
         public Task<AliveResult> SendAliveAsync(
             bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
-            int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default) => throw new NotSupportedException();
+            int? actualUpdateCheckJitterSeconds = null, int? actualAliveIntervalMinutes = null, CancellationToken ct = default) =>
+            throw new NotSupportedException();
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default) => throw new NotSupportedException();
 

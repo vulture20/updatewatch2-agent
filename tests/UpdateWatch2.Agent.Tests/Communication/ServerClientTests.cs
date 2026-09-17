@@ -107,13 +107,16 @@ public class ServerClientTests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
         var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
 
-        await client.SendAliveAsync(actualLogLevel: "DEBUG", actualUpdateCheckIntervalMinutes: 120, actualUpdateCheckJitterSeconds: 45);
+        await client.SendAliveAsync(
+            actualLogLevel: "DEBUG", actualUpdateCheckIntervalMinutes: 120, actualUpdateCheckJitterSeconds: 45,
+            actualAliveIntervalMinutes: 10);
 
         Assert.NotNull(handler.LastRequestBody);
         using var doc = JsonDocument.Parse(handler.LastRequestBody!);
         Assert.Equal("DEBUG", doc.RootElement.GetProperty("actualLogLevel").GetString());
         Assert.Equal(120, doc.RootElement.GetProperty("actualUpdateCheckIntervalMinutes").GetInt32());
         Assert.Equal(45, doc.RootElement.GetProperty("actualUpdateCheckJitterSeconds").GetInt32());
+        Assert.Equal(10, doc.RootElement.GetProperty("actualAliveIntervalMinutes").GetInt32());
     }
 
     [Fact]
@@ -127,6 +130,7 @@ public class ServerClientTests
                 desiredLogLevel = "DEBUG",
                 desiredUpdateCheckIntervalMinutes = 15,
                 desiredUpdateCheckJitterSeconds = 5,
+                desiredAliveIntervalMinutes = 10,
             }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
@@ -137,6 +141,7 @@ public class ServerClientTests
         Assert.Equal("DEBUG", result.DesiredLogLevel);
         Assert.Equal(15, result.DesiredUpdateCheckIntervalMinutes);
         Assert.Equal(5, result.DesiredUpdateCheckJitterSeconds);
+        Assert.Equal(10, result.DesiredAliveIntervalMinutes);
     }
 
     [Fact]
@@ -154,6 +159,7 @@ public class ServerClientTests
         Assert.Null(result.DesiredLogLevel);
         Assert.Null(result.DesiredUpdateCheckIntervalMinutes);
         Assert.Null(result.DesiredUpdateCheckJitterSeconds);
+        Assert.Null(result.DesiredAliveIntervalMinutes);
     }
 
     [Fact]

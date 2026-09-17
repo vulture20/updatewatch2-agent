@@ -176,7 +176,8 @@ public class HeartbeatWorker(
     {
         var rebootRequired = await CheckRebootRequiredAsync(ct);
         var result = await serverClient.SendAliveAsync(
-            rebootRequired, options.LogLevel, options.UpdateCheckIntervalMinutes, options.UpdateCheckJitterSeconds, ct);
+            rebootRequired, options.LogLevel, options.UpdateCheckIntervalMinutes, options.UpdateCheckJitterSeconds,
+            options.AliveIntervalMinutes, ct);
         if (result.Outcome != AliveOutcome.CertificateRejected)
         {
             _consecutiveCertificateRejections = 0;
@@ -293,6 +294,12 @@ public class HeartbeatWorker(
     /// </summary>
     private void ApplyPushedSettings(AliveResult result)
     {
+        // A pushed alive-heartbeat-interval change (agent v1.0.15, at the
+        // user's explicit request) is live-applied for free the same way
+        // the interval/jitter fields below already are: this very worker's
+        // ExecuteAsync loop reads options.AliveIntervalMinutes fresh for
+        // its own Task.Delay right after this method returns on the same
+        // tick, so no extra plumbing is needed to wire it up.
         var changed = false;
 
         if (result.DesiredLogLevel is not null && !string.Equals(result.DesiredLogLevel, options.LogLevel, StringComparison.OrdinalIgnoreCase))
@@ -312,6 +319,12 @@ public class HeartbeatWorker(
         if (result.DesiredUpdateCheckJitterSeconds is not null && result.DesiredUpdateCheckJitterSeconds != options.UpdateCheckJitterSeconds)
         {
             options.UpdateCheckJitterSeconds = result.DesiredUpdateCheckJitterSeconds.Value;
+            changed = true;
+        }
+
+        if (result.DesiredAliveIntervalMinutes is not null && result.DesiredAliveIntervalMinutes != options.AliveIntervalMinutes)
+        {
+            options.AliveIntervalMinutes = result.DesiredAliveIntervalMinutes.Value;
             changed = true;
         }
 

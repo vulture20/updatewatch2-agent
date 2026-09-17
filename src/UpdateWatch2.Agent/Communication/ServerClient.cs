@@ -109,7 +109,7 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
     public async Task<AliveResult> SendAliveAsync(
         bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
-        int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default)
+        int? actualUpdateCheckJitterSeconds = null, int? actualAliveIntervalMinutes = null, CancellationToken ct = default)
     {
         // Re-resolved fresh on every heartbeat, not just at registration —
         // this is the only channel that can ever update these fields after
@@ -124,7 +124,8 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             RebootRequired: rebootRequired,
             ActualLogLevel: actualLogLevel,
             ActualUpdateCheckIntervalMinutes: actualUpdateCheckIntervalMinutes,
-            ActualUpdateCheckJitterSeconds: actualUpdateCheckJitterSeconds);
+            ActualUpdateCheckJitterSeconds: actualUpdateCheckJitterSeconds,
+            ActualAliveIntervalMinutes: actualAliveIntervalMinutes);
 
         var route = AgentApiRoutes.Alive(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route}", route);
@@ -135,21 +136,21 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         // (CLAUDE.md) were actually exchanged, which is what's needed to
         // diagnose that mechanism specifically.
         logger.LogDebug(
-            "Sending current agent config to server: LogLevel={LogLevel}, UpdateCheckIntervalMinutes={UpdateCheckIntervalMinutes}, UpdateCheckJitterSeconds={UpdateCheckJitterSeconds}",
-            actualLogLevel, actualUpdateCheckIntervalMinutes, actualUpdateCheckJitterSeconds);
+            "Sending current agent config to server: LogLevel={LogLevel}, UpdateCheckIntervalMinutes={UpdateCheckIntervalMinutes}, UpdateCheckJitterSeconds={UpdateCheckJitterSeconds}, AliveIntervalMinutes={AliveIntervalMinutes}",
+            actualLogLevel, actualUpdateCheckIntervalMinutes, actualUpdateCheckJitterSeconds, actualAliveIntervalMinutes);
         var response = await WithRetryAsync(nameof(SendAliveAsync), () => httpClient.PostAsJsonAsync(route, request, JsonOptions, ct), ct);
         logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
             logger.LogDebug(
-                "Received server-desired agent config: LogLevel={DesiredLogLevel}, UpdateCheckIntervalMinutes={DesiredUpdateCheckIntervalMinutes}, UpdateCheckJitterSeconds={DesiredUpdateCheckJitterSeconds}",
-                body?.DesiredLogLevel, body?.DesiredUpdateCheckIntervalMinutes, body?.DesiredUpdateCheckJitterSeconds);
+                "Received server-desired agent config: LogLevel={DesiredLogLevel}, UpdateCheckIntervalMinutes={DesiredUpdateCheckIntervalMinutes}, UpdateCheckJitterSeconds={DesiredUpdateCheckJitterSeconds}, AliveIntervalMinutes={DesiredAliveIntervalMinutes}",
+                body?.DesiredLogLevel, body?.DesiredUpdateCheckIntervalMinutes, body?.DesiredUpdateCheckJitterSeconds, body?.DesiredAliveIntervalMinutes);
             return new AliveResult(
                 AliveOutcome.Success, body?.InstallRequested ?? false, body?.InstallUpdateIds, body?.AgentUpdateAvailable,
                 body?.CertificateRotationPending ?? false, body?.RebootRequested ?? false,
                 body?.PreDownloadWindowsUpdatesEnabled ?? false, body?.DesiredLogLevel, body?.DesiredUpdateCheckIntervalMinutes,
-                body?.DesiredUpdateCheckJitterSeconds);
+                body?.DesiredUpdateCheckJitterSeconds, body?.DesiredAliveIntervalMinutes);
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -167,7 +168,8 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
     private record AliveResponseBody(
         bool InstallRequested, IReadOnlyList<string>? InstallUpdateIds, AgentUpdateOffer? AgentUpdateAvailable,
         bool CertificateRotationPending, bool RebootRequested, bool PreDownloadWindowsUpdatesEnabled,
-        string? DesiredLogLevel, int? DesiredUpdateCheckIntervalMinutes, int? DesiredUpdateCheckJitterSeconds);
+        string? DesiredLogLevel, int? DesiredUpdateCheckIntervalMinutes, int? DesiredUpdateCheckJitterSeconds,
+        int? DesiredAliveIntervalMinutes);
 
     /// <summary>
     /// Computes when this machine last booted from <see cref="Environment.TickCount64"/>

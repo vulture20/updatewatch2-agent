@@ -254,6 +254,7 @@ public class WorkerTests
         Assert.Equal("DEBUG", client.LastActualLogLevel);
         Assert.Equal(120, client.LastActualUpdateCheckIntervalMinutes);
         Assert.Equal(45, client.LastActualUpdateCheckJitterSeconds);
+        Assert.Equal(60, client.LastActualAliveIntervalMinutes);
     }
 
     [Fact]
@@ -292,6 +293,27 @@ public class WorkerTests
 
         Assert.Equal(15, options.UpdateCheckIntervalMinutes);
         Assert.Equal(5, options.UpdateCheckJitterSeconds);
+        Assert.Equal(1, configStore.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_applies_a_pushed_alive_interval_override_live_and_persists_it()
+    {
+        // Live-applied "for free," same reasoning already documented for
+        // UpdateCheckIntervalMinutes/JitterSeconds — this worker's own
+        // ExecuteAsync loop reads options.AliveIntervalMinutes fresh for
+        // its Task.Delay right after ApplyPushedSettings mutates it on the
+        // same tick, with no extra plumbing.
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onDesiredAliveIntervalMinutes: _ => 10);
+        var options = new AgentOptions { AliveIntervalMinutes = 60 };
+        var configStore = new FakeAgentConfigStore();
+
+        var worker = CreateHeartbeatWorker(options, client, ReadyCertificateState(), configStore: configStore);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(10, options.AliveIntervalMinutes);
         Assert.Equal(1, configStore.SaveCallCount);
     }
 
@@ -1153,7 +1175,8 @@ public class WorkerTests
         Func<int, bool>? onPreDownloadWindowsUpdatesEnabled = null,
         Func<int, string?>? onDesiredLogLevel = null,
         Func<int, int?>? onDesiredUpdateCheckIntervalMinutes = null,
-        Func<int, int?>? onDesiredUpdateCheckJitterSeconds = null) : IServerClient
+        Func<int, int?>? onDesiredUpdateCheckJitterSeconds = null,
+        Func<int, int?>? onDesiredAliveIntervalMinutes = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
@@ -1173,6 +1196,8 @@ public class WorkerTests
 
         public int? LastActualUpdateCheckJitterSeconds { get; private set; }
 
+        public int? LastActualAliveIntervalMinutes { get; private set; }
+
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
 
         public Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default) => Task.FromResult(onFetchCaCertificateBundle?.Invoke() ?? []);
@@ -1183,13 +1208,14 @@ public class WorkerTests
 
         public Task<AliveResult> SendAliveAsync(
             bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
-            int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default)
+            int? actualUpdateCheckJitterSeconds = null, int? actualAliveIntervalMinutes = null, CancellationToken ct = default)
         {
             SendAliveCallCount++;
             LastRebootRequired = rebootRequired;
             LastActualLogLevel = actualLogLevel;
             LastActualUpdateCheckIntervalMinutes = actualUpdateCheckIntervalMinutes;
             LastActualUpdateCheckJitterSeconds = actualUpdateCheckJitterSeconds;
+            LastActualAliveIntervalMinutes = actualAliveIntervalMinutes;
             onSendAlive?.Invoke();
             var outcome = onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success;
             var installRequested = outcome == AliveOutcome.Success && (onInstallRequested?.Invoke(SendAliveCallCount) ?? false);
@@ -1201,9 +1227,11 @@ public class WorkerTests
             var desiredLogLevel = outcome == AliveOutcome.Success ? onDesiredLogLevel?.Invoke(SendAliveCallCount) : null;
             var desiredUpdateCheckIntervalMinutes = outcome == AliveOutcome.Success ? onDesiredUpdateCheckIntervalMinutes?.Invoke(SendAliveCallCount) : null;
             var desiredUpdateCheckJitterSeconds = outcome == AliveOutcome.Success ? onDesiredUpdateCheckJitterSeconds?.Invoke(SendAliveCallCount) : null;
+            var desiredAliveIntervalMinutes = outcome == AliveOutcome.Success ? onDesiredAliveIntervalMinutes?.Invoke(SendAliveCallCount) : null;
             return Task.FromResult(new AliveResult(
                 outcome, installRequested, installUpdateIds, agentUpdateAvailable, certificateRotationPending, rebootRequested,
-                preDownloadWindowsUpdatesEnabled, desiredLogLevel, desiredUpdateCheckIntervalMinutes, desiredUpdateCheckJitterSeconds));
+                preDownloadWindowsUpdatesEnabled, desiredLogLevel, desiredUpdateCheckIntervalMinutes, desiredUpdateCheckJitterSeconds,
+                desiredAliveIntervalMinutes));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
