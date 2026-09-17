@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Security;
+using System.ServiceProcess;
 using Microsoft.Extensions.Logging.EventLog;
 using UpdateWatch2.Agent;
 using UpdateWatch2.Agent.Certificates;
@@ -102,8 +103,28 @@ if (OperatingSystem.IsWindows())
         sp.GetRequiredService<IServerClient>(),
         sp.GetRequiredService<IPlatformUpdateApplier>(),
         sp.GetRequiredService<ILogger<AgentSelfUpdateService>>()));
-    builder.Logging.AddEventLog(new EventLogSettings { SourceName = "UpdateWatch2 Agent" });
-
+    // Deliberately NOT calling builder.Logging.AddEventLog(new EventLogSettings
+    // { SourceName = "..." }) here — a real dead-code trap found by a user
+    // report ("Service stopped/started successfully. logs under source
+    // 'UpdateWatch2 Agent', everything else under 'UpdateWatch2.Agent' —
+    // make the dot form the standard everywhere"). AddWindowsService() above
+    // already auto-registers its OWN EventLogLoggerProvider (the parameterless
+    // AddEventLog() overload, via TryAddEnumerable keyed by
+    // (ILoggerProvider, EventLogLoggerProvider)), whose SourceName defaults
+    // to IHostEnvironment.ApplicationName — the entry assembly name,
+    // "UpdateWatch2.Agent" (dot), since this project sets no <AssemblyName>
+    // override. This app used to ALSO call the EventLogSettings-instance
+    // overload of AddEventLog with SourceName "UpdateWatch2 Agent" (space,
+    // matching the SCM-registered service name) — confirmed by decompiling
+    // Microsoft.Extensions.Hosting.WindowsServices.dll that this second call
+    // registers its own EventLogLoggerProvider instance under the exact same
+    // TryAddEnumerable key AddWindowsService() already claimed, so it was
+    // silently DROPPED as a duplicate and never took effect at all. Every
+    // ILogger<T>-routed message (HeartbeatWorker, WuaUpdateSession, ...) was
+    // therefore always going to the dot source already — not because
+    // anything here intended that, but because the auto-registered provider
+    // was the only one ever actually wired in.
+    //
     // AddWindowsService() above auto-registers a hardcoded Warning-level
     // floor filter specifically for EventLogLoggerProvider whenever the
     // process is actually running as a Windows Service (a real, if obscure,
@@ -329,6 +350,28 @@ if (OperatingSystem.IsWindows())
     host.Services.GetRequiredService<WindowsUpdatePolicyEnforcer>().EnsureNativeAutomaticUpdatesDisabled();
 }
 
+if (OperatingSystem.IsWindows() && host.Services.GetService<IHostLifetime>() is ServiceBase serviceBase)
+{
+    // ServiceBase.AutoLog (default true, never disabled here) logs
+    // "Service started/stopped successfully." itself, entirely outside
+    // Microsoft.Extensions.Logging — a real user report ("everything else
+    // logs under 'UpdateWatch2.Agent', these two log under 'UpdateWatch2
+    // Agent'"). Its own lazily-constructed EventLog object defaults Source
+    // to ServiceBase.ServiceName ("UpdateWatch2 Agent", with a space — set
+    // above at AddWindowsService(), and required to keep matching the
+    // SCM-registered service name from installer/nsis/setup.nsi, so
+    // ServiceName itself must never change). Redirecting just this
+    // EventLog instance's Source is what brings those two messages onto
+    // the same "UpdateWatch2.Agent" source every other log entry already
+    // uses, without touching the actual registered service identity. NOT
+    // live-verified against a real Windows host/Event Viewer — same
+    // standing caveat as every other Windows-Event-Log finding in this
+    // codebase; confirm both messages actually appear under the dot
+    // source (and that service start/stop still works at all) before
+    // trusting this further.
+    serviceBase.EventLog.Source = "UpdateWatch2.Agent";
+}
+
 try
 {
     host.Run();
@@ -355,7 +398,7 @@ catch (OperationCanceledException)
     if (OperatingSystem.IsWindows())
     {
         EventLog.WriteEntry(
-            "UpdateWatch2 Agent",
+            "UpdateWatch2.Agent",
             "Shutdown did not complete within the configured timeout; exiting without a clean stop instead of crashing.",
             EventLogEntryType.Warning);
     }
@@ -391,7 +434,7 @@ catch (Exception ex)
     if (OperatingSystem.IsWindows())
     {
         EventLog.WriteEntry(
-            "UpdateWatch2 Agent",
+            "UpdateWatch2.Agent",
             $"Unhandled exception escaped host.Run(): {ex.GetType().FullName}: {ex.Message}{Environment.NewLine}{ex.StackTrace}",
             EventLogEntryType.Error);
     }
