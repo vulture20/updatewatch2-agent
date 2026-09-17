@@ -66,6 +66,8 @@ public class HeartbeatWorker(
     IRegistrationWakeSignal wakeSignal,
     IAgentRebooter agentRebooter,
     IPreDownloadPolicyState preDownloadPolicyState,
+    IAgentConfigStore configStore,
+    ILogLevelState logLevelState,
     ILogger<HeartbeatWorker> logger) : BackgroundService
 {
     // A single 401/403 could in principle be some transient fluke this
@@ -173,7 +175,8 @@ public class HeartbeatWorker(
     private async Task HandleAliveAsync(CancellationToken ct)
     {
         var rebootRequired = await CheckRebootRequiredAsync(ct);
-        var result = await serverClient.SendAliveAsync(rebootRequired, ct);
+        var result = await serverClient.SendAliveAsync(
+            rebootRequired, options.LogLevel, options.UpdateCheckIntervalMinutes, options.UpdateCheckJitterSeconds, ct);
         if (result.Outcome != AliveOutcome.CertificateRejected)
         {
             _consecutiveCertificateRejections = 0;
@@ -186,6 +189,8 @@ public class HeartbeatWorker(
                 // its own, much coarser cadence (see IPreDownloadPolicyState's
                 // own doc comment for why it isn't itself polled here).
                 preDownloadPolicyState.Update(result.PreDownloadWindowsUpdatesEnabled);
+
+                ApplyPushedSettings(result);
 
                 if (result.InstallRequested)
                 {
@@ -259,6 +264,68 @@ public class HeartbeatWorker(
         {
             logger.LogWarning(ex, "Failed to check whether a reboot is required");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Applies any admin-set per-agent override the server just sent back
+    /// (<see cref="AliveResult.DesiredLogLevel"/> and its siblings) —
+    /// unconditionally, whenever non-null and different from what's
+    /// currently live, which is what implements "the server always wins on
+    /// conflict" (CLAUDE.md, at the user's explicit request): even a value
+    /// a human just hand-edited into the local registry/config file gets
+    /// overwritten on the very next heartbeat. A null field means no
+    /// override for that setting — nothing here touches it, leaving the
+    /// local file authoritative. Mutates the already-injected
+    /// <see cref="AgentOptions"/> singleton in place — the same instance
+    /// <see cref="UpdateCheckWorker.NextDelay"/> reads fresh on every loop
+    /// iteration, so an interval/jitter change is live-applied for free,
+    /// and the same instance <see cref="ServerClient.SendAliveAsync"/> reads
+    /// on every future heartbeat, so this agent's own next report reflects
+    /// the change immediately. A LogLevel change additionally goes through
+    /// <see cref="ILogLevelState"/> so it takes effect on this process's
+    /// actual logging output right away — see <c>Program.cs</c>'s own
+    /// comments for that mechanism. The persistence write (only, not the
+    /// in-memory mutation, which can't fail) gets its own try/catch, non-
+    /// fatal — a disk/registry write failure still leaves the live value
+    /// applied, it just won't survive a restart until it succeeds on a
+    /// later tick.
+    /// </summary>
+    private void ApplyPushedSettings(AliveResult result)
+    {
+        var changed = false;
+
+        if (result.DesiredLogLevel is not null && !string.Equals(result.DesiredLogLevel, options.LogLevel, StringComparison.OrdinalIgnoreCase))
+        {
+            options.LogLevel = result.DesiredLogLevel;
+            logLevelState.Update(result.DesiredLogLevel);
+            changed = true;
+        }
+
+        if (result.DesiredUpdateCheckIntervalMinutes is not null && result.DesiredUpdateCheckIntervalMinutes != options.UpdateCheckIntervalMinutes)
+        {
+            options.UpdateCheckIntervalMinutes = result.DesiredUpdateCheckIntervalMinutes.Value;
+            changed = true;
+        }
+
+        if (result.DesiredUpdateCheckJitterSeconds is not null && result.DesiredUpdateCheckJitterSeconds != options.UpdateCheckJitterSeconds)
+        {
+            options.UpdateCheckJitterSeconds = result.DesiredUpdateCheckJitterSeconds.Value;
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        try
+        {
+            configStore.Save(options);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Applied a server-pushed settings change live, but failed to persist it to the local config store.");
         }
     }
 

@@ -98,6 +98,65 @@ public class ServerClientTests
     }
 
     [Fact]
+    public async Task SendAliveAsync_sends_this_agents_own_current_settings()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        await client.SendAliveAsync(actualLogLevel: "DEBUG", actualUpdateCheckIntervalMinutes: 120, actualUpdateCheckJitterSeconds: 45);
+
+        Assert.NotNull(handler.LastRequestBody);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Equal("DEBUG", doc.RootElement.GetProperty("actualLogLevel").GetString());
+        Assert.Equal(120, doc.RootElement.GetProperty("actualUpdateCheckIntervalMinutes").GetInt32());
+        Assert.Equal(45, doc.RootElement.GetProperty("actualUpdateCheckJitterSeconds").GetInt32());
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_parses_a_desired_setting_override_when_the_server_reports_one()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                installRequested = false,
+                desiredLogLevel = "DEBUG",
+                desiredUpdateCheckIntervalMinutes = 15,
+                desiredUpdateCheckJitterSeconds = 5,
+            }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.Equal("DEBUG", result.DesiredLogLevel);
+        Assert.Equal(15, result.DesiredUpdateCheckIntervalMinutes);
+        Assert.Equal(5, result.DesiredUpdateCheckJitterSeconds);
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_defaults_desired_settings_to_null_when_the_server_omits_them()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+
+        var result = await client.SendAliveAsync();
+
+        Assert.Null(result.DesiredLogLevel);
+        Assert.Null(result.DesiredUpdateCheckIntervalMinutes);
+        Assert.Null(result.DesiredUpdateCheckJitterSeconds);
+    }
+
+    [Fact]
     public async Task SendAliveAsync_parses_an_agent_update_offer_when_the_server_includes_one()
     {
         // updatewatch2-agent#14: the offer's shape (nested asset objects,

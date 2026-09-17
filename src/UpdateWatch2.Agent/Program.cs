@@ -36,8 +36,10 @@ IAgentConfigStore configStore = OperatingSystem.IsWindows()
         : throw new PlatformNotSupportedException("UpdateWatch2 Agent only supports Windows and Linux.");
 builder.Services.AddSingleton(configStore);
 
-// Loaded once at startup. A server-pushed log-level change (CLAUDE.md
-// section 6.2) would need this to become reloadable — not implemented yet.
+// Loaded once at startup, but no longer read-only after that — see
+// logLevelState below, which HeartbeatWorker mutates live when the server
+// pushes a per-agent LogLevel override (CLAUDE.md, at the user's explicit
+// request that this take effect immediately, without an agent restart).
 var agentOptions = configStore.Load();
 builder.Services.AddSingleton(agentOptions);
 
@@ -51,22 +53,24 @@ builder.Services.AddSingleton(agentOptions);
 // it to DEBUG would at least have shown *something* happening, instead of
 // looking identical to "nothing is running".
 //
-// Also — matching the server's own documented finding (CLAUDE.md) that
-// builder.Logging.SetMinimumLevel(...) alone does not reliably take effect
-// on a Generic-Host-style app, because Logging:LogLevel:* read reactively
-// from IConfiguration wins over it — writing the value directly into
-// configuration is what the console provider's filter actually respects.
-// NOT sufficient for the EventLog provider specifically, though — see the
-// dedicated override right after AddEventLog() below, added after a user
-// report that DEBUG-level messages (the COM/HTTP/shell/registry logging
-// added in v1.0.4) never reached Event Viewer even with LogLevel set to
-// DEBUG, which is what caught this comment's own claim being incomplete.
-var mappedLogLevel = MapLogLevel(agentOptions.LogLevel);
-builder.Configuration["Logging:LogLevel:Default"] = mappedLogLevel;
-if (Enum.TryParse<LogLevel>(mappedLogLevel, out var minLevel))
-{
-    builder.Logging.SetMinimumLevel(minLevel);
-}
+// Previously this wrote builder.Configuration["Logging:LogLevel:Default"]
+// plus called SetMinimumLevel(...) once, before Build() — startup-only,
+// with no way to change it again short of restarting the process (matching
+// the server's own documented finding that SetMinimumLevel alone doesn't
+// reliably take effect on a Generic-Host-style app, since Logging:LogLevel:*
+// read reactively from IConfiguration wins over it). Replaced with a
+// mutable ILogLevelState (a single AddFilter delegate reading it on every
+// logging call, re-evaluated fresh each time by design — no
+// IConfigurationRoot.Reload() needed anywhere, unlike the server's own
+// fix for a related but different problem) so HeartbeatWorker can change
+// it live later. Verified with a throwaway console harness mirroring this
+// exact Host.CreateApplicationBuilder + appsettings.json setup: a
+// LogLevelState.Update() call changed DEBUG-message visibility immediately,
+// with no restart and no Reload() call, both starting from and overriding
+// appsettings.json's own "Information" default correctly.
+var logLevelState = new LogLevelState(agentOptions.LogLevel);
+builder.Services.AddSingleton<ILogLevelState>(logLevelState);
+builder.Logging.AddFilter((_, level) => level >= logLevelState.Current);
 
 // Where this agent's own client certificate lives, once issued — genuinely
 // platform-specific storage (machine cert store vs. a file), see
@@ -132,29 +136,22 @@ if (OperatingSystem.IsWindows())
     // an ordinary app's routine Information/Debug chatter out of the shared
     // Windows Event Log by default). That filter is scoped to this specific
     // provider, which makes it MORE specific than — and therefore win over
-    // — this file's own generic Logging:LogLevel:Default write above,
-    // regardless of registration order; SetMinimumLevel() never touches a
-    // provider-specific rule at all. The practical effect, exactly as a
-    // user reported: LogLevel set to DEBUG in the registry, yet none of the
-    // new COM/HTTP/shell/registry DEBUG log lines (v1.0.4) ever appeared in
-    // Event Viewer — only Information and above ever could, no matter what
-    // LogLevel said. Overridden two ways for the same reason this
-    // codebase's other logging-precedence fixes use more than one
-    // mechanism when unsure which one actually wins in practice (server
-    // CLAUDE.md's AdminSettingsStore.Apply note): a configuration-bound
-    // rule (reactive to a later config change the same way the generic
-    // default already is) plus a code-level AddFilter<T> call registered
-    // after AddWindowsService()'s own, so "last rule of equal specificity
-    // wins" resolves in our favor even if the configuration-bound path
-    // somehow doesn't. NOT live-verified against a real Windows Event
-    // Viewer in this session (no Windows host available) — re-confirm a
-    // DEBUG-level message from this agent's own new COM/HTTP logging
-    // actually appears there before trusting this further.
-    builder.Configuration["Logging:EventLog:LogLevel:Default"] = mappedLogLevel;
-    if (Enum.TryParse<LogLevel>(mappedLogLevel, out var eventLogMinLevel))
-    {
-        builder.Logging.AddFilter<EventLogLoggerProvider>(level => level >= eventLogMinLevel);
-    }
+    // — the generic AddFilter registered above, regardless of registration
+    // order. The practical effect, exactly as a user reported: LogLevel set
+    // to DEBUG in the registry, yet none of the new COM/HTTP/shell/registry
+    // DEBUG log lines (v1.0.4) ever appeared in Event Viewer — only
+    // Information and above ever could, no matter what LogLevel said. Fixed
+    // with a provider-specific AddFilter<T> call registered after
+    // AddWindowsService()'s own, so "last rule of equal specificity wins"
+    // resolves in our favor — reading the same logLevelState the generic
+    // filter above does, so a later server-pushed LogLevel change
+    // (HeartbeatWorker calling logLevelState.Update(...)) reaches Event
+    // Viewer too, not just the generic providers. NOT live-verified against
+    // a real Windows Event Viewer in this session (no Windows host
+    // available) — re-confirm a DEBUG-level message from this agent's own
+    // COM/HTTP logging actually appears there, both at startup and after a
+    // live-pushed change, before trusting this further.
+    builder.Logging.AddFilter<EventLogLoggerProvider>((_, level) => level >= logLevelState.Current);
 }
 else if (OperatingSystem.IsLinux())
 {
@@ -441,12 +438,3 @@ catch (Exception ex)
 
     Environment.ExitCode = 1;
 }
-
-static string MapLogLevel(string value) => value.Trim().ToUpperInvariant() switch
-{
-    "DEBUG" => nameof(LogLevel.Debug),
-    "INFO" => nameof(LogLevel.Information),
-    "WARNING" => nameof(LogLevel.Warning),
-    "ERROR" => nameof(LogLevel.Error),
-    _ => value,
-};

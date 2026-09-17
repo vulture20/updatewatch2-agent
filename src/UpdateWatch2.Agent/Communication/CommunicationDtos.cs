@@ -35,8 +35,19 @@ public record RegisterRequest(string? DnsName, string OperatingSystem, string? I
 /// Null means "the check itself failed this tick, or hasn't run yet" —
 /// never conflate with a confirmed <c>false</c>, the same discipline
 /// <c>UpdateCheck.RebootCheckResult</c> already enforces one layer down.
+/// <see cref="ActualLogLevel"/>/<see cref="ActualUpdateCheckIntervalMinutes"/>/
+/// <see cref="ActualUpdateCheckJitterSeconds"/> are this agent's own
+/// current, actually-effective values for the three settings the server can
+/// push a per-agent override for — sent every heartbeat regardless of
+/// whether an override is active, so the admin UI can show what's really
+/// running even after a manual registry/config-file edit, at the user's
+/// explicit request ("Änderungen an Registry bzw. Configfile sollen
+/// wiederum am Server zu sehen sein.").
 /// </summary>
-public record AliveRequest(string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion, DateTimeOffset? BootTimeUtc = null, bool? RebootRequired = null);
+public record AliveRequest(
+    string? DnsName, string OperatingSystem, string? IpAddress, string AgentVersion, DateTimeOffset? BootTimeUtc = null,
+    bool? RebootRequired = null, string? ActualLogLevel = null, int? ActualUpdateCheckIntervalMinutes = null,
+    int? ActualUpdateCheckJitterSeconds = null);
 
 /// <summary>
 /// Property names match the server's camelCase JSON output field-for-field
@@ -124,7 +135,16 @@ public record AliveResult(
     AgentUpdateOffer? AgentUpdateAvailable = null,
     bool CertificateRotationPending = false,
     bool RebootRequested = false,
-    bool PreDownloadWindowsUpdatesEnabled = false)
+    bool PreDownloadWindowsUpdatesEnabled = false,
+    // Null means no server-set override for that setting — this agent's
+    // own local registry/config file value stays authoritative. Non-null
+    // is enforced unconditionally by HeartbeatWorker on every heartbeat
+    // that reports a differing actual value — "the server always wins on
+    // conflict" (CLAUDE.md, at the user's explicit request), no separate
+    // timestamp-based conflict resolution.
+    string? DesiredLogLevel = null,
+    int? DesiredUpdateCheckIntervalMinutes = null,
+    int? DesiredUpdateCheckJitterSeconds = null)
 {
     public static AliveResult From(AliveOutcome outcome) => new(outcome, InstallRequested: false);
 }

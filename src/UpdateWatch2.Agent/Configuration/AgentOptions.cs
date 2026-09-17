@@ -27,8 +27,12 @@ public class AgentOptions
 
     /// <summary>
     /// DEBUG/INFO/WARNING/ERROR — same values as the server's
-    /// UPDATEWATCH2_LOGLEVEL. Can be set locally or pushed centrally from
-    /// the server UI (not implemented yet).
+    /// UPDATEWATCH2_LOGLEVEL. Set locally by default; an admin can also
+    /// push a per-agent override from the server (a per-agent Settings
+    /// dialog, not the fleet-wide admin settings page), which is enforced
+    /// live and persisted back into this value on the next heartbeat — see
+    /// <see cref="HeartbeatWorker"/>'s <c>ApplyPushedSettings</c> and
+    /// <see cref="ILogLevelState"/>.
     /// </summary>
     public string LogLevel { get; set; } = "INFO";
 

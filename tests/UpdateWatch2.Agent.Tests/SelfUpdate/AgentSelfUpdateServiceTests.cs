@@ -262,7 +262,9 @@ public class AgentSelfUpdateServiceTests : IDisposable
 
         public Task<RegisterResult> RegisterAsync(string? registrationToken, CancellationToken ct = default) => throw new NotSupportedException();
 
-        public Task<AliveResult> SendAliveAsync(bool? rebootRequired = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AliveResult> SendAliveAsync(
+            bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
+            int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default) => throw new NotSupportedException();
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default) => throw new NotSupportedException();
 

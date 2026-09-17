@@ -107,7 +107,9 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
         return result ?? new RegisterResult(Approved: false, RegistrationToken: null, Certificate: null, ProtocolVersion: null);
     }
 
-    public async Task<AliveResult> SendAliveAsync(bool? rebootRequired = null, CancellationToken ct = default)
+    public async Task<AliveResult> SendAliveAsync(
+        bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
+        int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default)
     {
         // Re-resolved fresh on every heartbeat, not just at registration —
         // this is the only channel that can ever update these fields after
@@ -119,7 +121,10 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             IpAddress: ResolveOutboundIpAddress(),
             AgentVersion: AgentVersion.Current,
             BootTimeUtc: ResolveBootTimeUtc(),
-            RebootRequired: rebootRequired);
+            RebootRequired: rebootRequired,
+            ActualLogLevel: actualLogLevel,
+            ActualUpdateCheckIntervalMinutes: actualUpdateCheckIntervalMinutes,
+            ActualUpdateCheckJitterSeconds: actualUpdateCheckJitterSeconds);
 
         var route = AgentApiRoutes.Alive(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route}", route);
@@ -131,7 +136,8 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
             return new AliveResult(
                 AliveOutcome.Success, body?.InstallRequested ?? false, body?.InstallUpdateIds, body?.AgentUpdateAvailable,
                 body?.CertificateRotationPending ?? false, body?.RebootRequested ?? false,
-                body?.PreDownloadWindowsUpdatesEnabled ?? false);
+                body?.PreDownloadWindowsUpdatesEnabled ?? false, body?.DesiredLogLevel, body?.DesiredUpdateCheckIntervalMinutes,
+                body?.DesiredUpdateCheckJitterSeconds);
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -148,7 +154,8 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
     private record AliveResponseBody(
         bool InstallRequested, IReadOnlyList<string>? InstallUpdateIds, AgentUpdateOffer? AgentUpdateAvailable,
-        bool CertificateRotationPending, bool RebootRequested, bool PreDownloadWindowsUpdatesEnabled);
+        bool CertificateRotationPending, bool RebootRequested, bool PreDownloadWindowsUpdatesEnabled,
+        string? DesiredLogLevel, int? DesiredUpdateCheckIntervalMinutes, int? DesiredUpdateCheckJitterSeconds);
 
     /// <summary>
     /// Computes when this machine last booted from <see cref="Environment.TickCount64"/>

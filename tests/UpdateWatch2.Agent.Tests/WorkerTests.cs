@@ -241,6 +241,114 @@ public class WorkerTests
     }
 
     [Fact]
+    public async Task HeartbeatWorker_reports_its_own_current_settings_on_every_heartbeat()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel());
+        var options = new AgentOptions { AliveIntervalMinutes = 60, LogLevel = "DEBUG", UpdateCheckIntervalMinutes = 120, UpdateCheckJitterSeconds = 45 };
+
+        var worker = CreateHeartbeatWorker(options, client, ReadyCertificateState());
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal("DEBUG", client.LastActualLogLevel);
+        Assert.Equal(120, client.LastActualUpdateCheckIntervalMinutes);
+        Assert.Equal(45, client.LastActualUpdateCheckJitterSeconds);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_applies_a_pushed_LogLevel_override_live_and_persists_it()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onDesiredLogLevel: _ => "DEBUG");
+        var options = new AgentOptions { AliveIntervalMinutes = 60, LogLevel = "INFO" };
+        var configStore = new FakeAgentConfigStore();
+        var logLevelState = new LogLevelState(options.LogLevel);
+
+        var worker = CreateHeartbeatWorker(options, client, ReadyCertificateState(), configStore: configStore, logLevelState: logLevelState);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal("DEBUG", options.LogLevel);
+        Assert.Equal(LogLevel.Debug, logLevelState.Current);
+        Assert.Equal(1, configStore.SaveCallCount);
+        Assert.Same(options, configStore.LastSaved);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_applies_pushed_update_check_interval_and_jitter_overrides_live_and_persists_them()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(
+            onSendAlive: () => cts.Cancel(),
+            onDesiredUpdateCheckIntervalMinutes: _ => 15,
+            onDesiredUpdateCheckJitterSeconds: _ => 5);
+        var options = new AgentOptions { AliveIntervalMinutes = 60, UpdateCheckIntervalMinutes = 240, UpdateCheckJitterSeconds = 300 };
+        var configStore = new FakeAgentConfigStore();
+
+        var worker = CreateHeartbeatWorker(options, client, ReadyCertificateState(), configStore: configStore);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(15, options.UpdateCheckIntervalMinutes);
+        Assert.Equal(5, options.UpdateCheckJitterSeconds);
+        Assert.Equal(1, configStore.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_persist_anything_when_no_setting_override_is_pushed()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel());
+        var options = new AgentOptions { AliveIntervalMinutes = 60, LogLevel = "INFO", UpdateCheckIntervalMinutes = 240, UpdateCheckJitterSeconds = 300 };
+        var configStore = new FakeAgentConfigStore();
+
+        var worker = CreateHeartbeatWorker(options, client, ReadyCertificateState(), configStore: configStore);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, configStore.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_persist_when_the_pushed_override_already_matches_the_current_value()
+    {
+        // A no-op push (server keeps sending the same override every
+        // heartbeat) must not write to disk/registry on every single tick.
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onDesiredLogLevel: _ => "DEBUG");
+        var options = new AgentOptions { AliveIntervalMinutes = 60, LogLevel = "DEBUG" };
+        var configStore = new FakeAgentConfigStore();
+
+        var worker = CreateHeartbeatWorker(options, client, ReadyCertificateState(), configStore: configStore);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, configStore.SaveCallCount);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_keeps_the_live_value_applied_even_when_persisting_it_fails()
+    {
+        var cts = new CancellationTokenSource();
+        var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onDesiredLogLevel: _ => "DEBUG");
+        var options = new AgentOptions { AliveIntervalMinutes = 60, LogLevel = "INFO" };
+        var configStore = new FakeAgentConfigStore(throwOnSave: new IOException("disk full"));
+        var logLevelState = new LogLevelState(options.LogLevel);
+
+        var worker = CreateHeartbeatWorker(options, client, ReadyCertificateState(), configStore: configStore, logLevelState: logLevelState);
+
+        // The failed persistence must not crash the whole heartbeat tick —
+        // HandleAliveAsync's own per-tick try/catch in ExecuteAsync covers
+        // this, so RunUntilCancelledAsync completing at all is part of what
+        // this test verifies.
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal("DEBUG", options.LogLevel);
+        Assert.Equal(LogLevel.Debug, logLevelState.Current);
+    }
+
+    [Fact]
     public async Task HeartbeatWorker_cleans_up_old_self_update_packages_on_its_own_tick()
     {
         // Integration-style, not just SelfUpdateStagingCleanerTests in
@@ -931,7 +1039,9 @@ public class WorkerTests
         SelfUpdateStagingCleaner? selfUpdateStagingCleaner = null,
         IRegistrationWakeSignal? wakeSignal = null,
         IAgentRebooter? agentRebooter = null,
-        IPreDownloadPolicyState? preDownloadPolicyState = null) =>
+        IPreDownloadPolicyState? preDownloadPolicyState = null,
+        IAgentConfigStore? configStore = null,
+        ILogLevelState? logLevelState = null) =>
         new(options, client, certificateState,
             certificateStore ?? new FakeClientCertificateStore(existing: null),
             caTrustStore ?? new FileCaTrustStore(Path.Combine(Path.GetTempPath(), $"uw2-agent-tests-catrust-{Guid.NewGuid()}.pem")),
@@ -949,6 +1059,8 @@ public class WorkerTests
             wakeSignal ?? new RegistrationWakeSignal(),
             agentRebooter ?? new FakeAgentRebooter(),
             preDownloadPolicyState ?? new PreDownloadPolicyState(),
+            configStore ?? new FakeAgentConfigStore(),
+            logLevelState ?? new LogLevelState(options.LogLevel),
             logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     private static AgentCertificateState ReadyCertificateState()
@@ -1038,7 +1150,10 @@ public class WorkerTests
         Func<int, IReadOnlyList<string>?>? onInstallUpdateIds = null,
         Func<int, bool>? onRebootRequested = null,
         Action<WireRebootOutcome, string?>? onAcknowledgeReboot = null,
-        Func<int, bool>? onPreDownloadWindowsUpdatesEnabled = null) : IServerClient
+        Func<int, bool>? onPreDownloadWindowsUpdatesEnabled = null,
+        Func<int, string?>? onDesiredLogLevel = null,
+        Func<int, int?>? onDesiredUpdateCheckIntervalMinutes = null,
+        Func<int, int?>? onDesiredUpdateCheckJitterSeconds = null) : IServerClient
     {
         public int RenewCertificateCallCount { get; private set; }
 
@@ -1052,6 +1167,12 @@ public class WorkerTests
 
         public bool? LastRebootRequired { get; private set; }
 
+        public string? LastActualLogLevel { get; private set; }
+
+        public int? LastActualUpdateCheckIntervalMinutes { get; private set; }
+
+        public int? LastActualUpdateCheckJitterSeconds { get; private set; }
+
         public Task<byte[]> FetchCaCertificateAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
 
         public Task<byte[]> FetchCaCertificateBundleAsync(CancellationToken ct = default) => Task.FromResult(onFetchCaCertificateBundle?.Invoke() ?? []);
@@ -1060,10 +1181,15 @@ public class WorkerTests
             Task.FromResult(onRegister?.Invoke(registrationToken)
                 ?? new RegisterResult(Approved: true, RegistrationToken: null, Certificate: null, ProtocolVersion: null));
 
-        public Task<AliveResult> SendAliveAsync(bool? rebootRequired = null, CancellationToken ct = default)
+        public Task<AliveResult> SendAliveAsync(
+            bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
+            int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default)
         {
             SendAliveCallCount++;
             LastRebootRequired = rebootRequired;
+            LastActualLogLevel = actualLogLevel;
+            LastActualUpdateCheckIntervalMinutes = actualUpdateCheckIntervalMinutes;
+            LastActualUpdateCheckJitterSeconds = actualUpdateCheckJitterSeconds;
             onSendAlive?.Invoke();
             var outcome = onSendAliveOutcome?.Invoke(SendAliveCallCount) ?? AliveOutcome.Success;
             var installRequested = outcome == AliveOutcome.Success && (onInstallRequested?.Invoke(SendAliveCallCount) ?? false);
@@ -1072,9 +1198,12 @@ public class WorkerTests
             var certificateRotationPending = outcome == AliveOutcome.Success && (onCertificateRotationPending?.Invoke(SendAliveCallCount) ?? false);
             var rebootRequested = outcome == AliveOutcome.Success && (onRebootRequested?.Invoke(SendAliveCallCount) ?? false);
             var preDownloadWindowsUpdatesEnabled = outcome == AliveOutcome.Success && (onPreDownloadWindowsUpdatesEnabled?.Invoke(SendAliveCallCount) ?? false);
+            var desiredLogLevel = outcome == AliveOutcome.Success ? onDesiredLogLevel?.Invoke(SendAliveCallCount) : null;
+            var desiredUpdateCheckIntervalMinutes = outcome == AliveOutcome.Success ? onDesiredUpdateCheckIntervalMinutes?.Invoke(SendAliveCallCount) : null;
+            var desiredUpdateCheckJitterSeconds = outcome == AliveOutcome.Success ? onDesiredUpdateCheckJitterSeconds?.Invoke(SendAliveCallCount) : null;
             return Task.FromResult(new AliveResult(
                 outcome, installRequested, installUpdateIds, agentUpdateAvailable, certificateRotationPending, rebootRequested,
-                preDownloadWindowsUpdatesEnabled));
+                preDownloadWindowsUpdatesEnabled, desiredLogLevel, desiredUpdateCheckIntervalMinutes, desiredUpdateCheckJitterSeconds));
         }
 
         public Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default)
@@ -1110,6 +1239,25 @@ public class WorkerTests
         {
             DownloadFileCallCount++;
             return onDownloadFile?.Invoke(downloadUrl, destinationPath) ?? Task.CompletedTask;
+        }
+    }
+
+    private class FakeAgentConfigStore(Exception? throwOnSave = null) : IAgentConfigStore
+    {
+        public int SaveCallCount { get; private set; }
+
+        public AgentOptions? LastSaved { get; private set; }
+
+        public AgentOptions Load() => LastSaved ?? new AgentOptions();
+
+        public void Save(AgentOptions options)
+        {
+            SaveCallCount++;
+            LastSaved = options;
+            if (throwOnSave is not null)
+            {
+                throw throwOnSave;
+            }
         }
     }
 

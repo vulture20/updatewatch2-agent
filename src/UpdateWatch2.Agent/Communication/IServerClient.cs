@@ -50,7 +50,12 @@ public interface IServerClient
     /// null when the check itself failed or hasn't run, never a confirmed
     /// false negative. See <see cref="Communication.AliveRequest.RebootRequired"/>.
     /// </param>
-    Task<AliveResult> SendAliveAsync(bool? rebootRequired = null, CancellationToken ct = default);
+    /// <param name="actualLogLevel">This agent's own current, actually-effective LogLevel — see <see cref="Communication.AliveRequest.ActualLogLevel"/>.</param>
+    /// <param name="actualUpdateCheckIntervalMinutes">This agent's own current update-check interval — see <see cref="Communication.AliveRequest.ActualUpdateCheckIntervalMinutes"/>.</param>
+    /// <param name="actualUpdateCheckJitterSeconds">This agent's own current update-check jitter — see <see cref="Communication.AliveRequest.ActualUpdateCheckJitterSeconds"/>.</param>
+    Task<AliveResult> SendAliveAsync(
+        bool? rebootRequired = null, string? actualLogLevel = null, int? actualUpdateCheckIntervalMinutes = null,
+        int? actualUpdateCheckJitterSeconds = null, CancellationToken ct = default);
 
     Task ReportUpdatesAsync(ReportUpdatesRequest report, CancellationToken ct = default);
 
