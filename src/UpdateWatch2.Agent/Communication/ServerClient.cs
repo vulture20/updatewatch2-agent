@@ -128,11 +128,23 @@ public class ServerClient(HttpClient httpClient, ILogger<ServerClient> logger) :
 
         var route = AgentApiRoutes.Alive(Environment.MachineName);
         logger.LogDebug("HTTP POST {Route}", route);
+        // Reported directly by the user as missing ("Es fehlen noch diverse
+        // Debugmeldungen im Agent, u. a. ... Senden der Config, Empfangen
+        // der Config") — the generic HTTP-level lines above/below say a
+        // request happened, but not what per-agent-settings-push values
+        // (CLAUDE.md) were actually exchanged, which is what's needed to
+        // diagnose that mechanism specifically.
+        logger.LogDebug(
+            "Sending current agent config to server: LogLevel={LogLevel}, UpdateCheckIntervalMinutes={UpdateCheckIntervalMinutes}, UpdateCheckJitterSeconds={UpdateCheckJitterSeconds}",
+            actualLogLevel, actualUpdateCheckIntervalMinutes, actualUpdateCheckJitterSeconds);
         var response = await WithRetryAsync(nameof(SendAliveAsync), () => httpClient.PostAsJsonAsync(route, request, JsonOptions, ct), ct);
         logger.LogDebug("HTTP POST {Route} -> {StatusCode}", route, (int)response.StatusCode);
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<AliveResponseBody>(JsonOptions, ct);
+            logger.LogDebug(
+                "Received server-desired agent config: LogLevel={DesiredLogLevel}, UpdateCheckIntervalMinutes={DesiredUpdateCheckIntervalMinutes}, UpdateCheckJitterSeconds={DesiredUpdateCheckJitterSeconds}",
+                body?.DesiredLogLevel, body?.DesiredUpdateCheckIntervalMinutes, body?.DesiredUpdateCheckJitterSeconds);
             return new AliveResult(
                 AliveOutcome.Success, body?.InstallRequested ?? false, body?.InstallUpdateIds, body?.AgentUpdateAvailable,
                 body?.CertificateRotationPending ?? false, body?.RebootRequested ?? false,

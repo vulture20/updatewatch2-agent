@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.14] - 2026-09-17
+
+### Added
+
+- **Debug-level logging for the per-agent settings-push mechanism (CLAUDE.md), reported by the user as missing** ("Es fehlen noch diverse Debugmeldungen im Agent, u. a. Schreiben der Config, Empfangen der Config, Senden der Config, Änderung des LogLevels"). The existing HTTP-level debug lines around the `alive` call only ever said a request happened, not what per-agent-settings values were actually exchanged, which is what's needed to diagnose that specific mechanism. `ServerClient.SendAliveAsync` now logs the `Actual*` values it's about to send (LogLevel/UpdateCheckIntervalMinutes/UpdateCheckJitterSeconds) before the request, and the `Desired*` values it received back once the response is parsed. `HeartbeatWorker.ApplyPushedSettings` logs the old-to-new LogLevel transition when a server-pushed override actually changes it, and logs immediately before/after `IAgentConfigStore.Save(options)` writes the change to the local registry/config file.
+
 ## [1.0.13] - 2026-09-17
 
 ### Added

@@ -297,6 +297,7 @@ public class HeartbeatWorker(
 
         if (result.DesiredLogLevel is not null && !string.Equals(result.DesiredLogLevel, options.LogLevel, StringComparison.OrdinalIgnoreCase))
         {
+            logger.LogDebug("Server-pushed LogLevel change: {OldLogLevel} -> {NewLogLevel}", options.LogLevel, result.DesiredLogLevel);
             options.LogLevel = result.DesiredLogLevel;
             logLevelState.Update(result.DesiredLogLevel);
             changed = true;
@@ -321,7 +322,9 @@ public class HeartbeatWorker(
 
         try
         {
+            logger.LogDebug("Writing server-pushed config change to the local config store (registry/config file).");
             configStore.Save(options);
+            logger.LogDebug("Wrote server-pushed config change to the local config store.");
         }
         catch (Exception ex)
         {
