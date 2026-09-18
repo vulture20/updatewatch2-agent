@@ -11,6 +11,13 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.21] - 2026-09-18
+
+### Fixed
+
+- **Protocol version bumped to `1.7.0` to match the server-side fix for `updatewatch2-server#24`** — the previous release (v1.0.20/server v1.3.24) had broken self-update entirely for every agent build older than v1.0.20, since the server's `AgentUpdateOffer` no longer carried the three field names those builds knew how to read at all. The actual fix is server-side only (three backward-compatible alias fields added back to the wire response — see the server repo's own changelog for the full story); no agent-side code changed in this release, since a v1.0.20+ agent was never affected by the original bug and needs no new logic to benefit from the server's fix. Bumped purely to keep the shared protocol constant accurate.
+- **Also worth recording here**: the user confirmed, on the separate long-standing "Linux self-update never completes" report (#24), that the underlying `dpkg` failure on the affected host is an architecture mismatch — an amd64 host being offered the arm64 `.deb`. Almost certainly the original, pre-server-v1.3.24 manifestation of the exact no-arch-awareness bug the whole arm64 self-update work has been chasing; expected to resolve on its own for that stuck agent once its next heartbeat can read a corrected offer (server v1.3.25) — not yet confirmed live.
+
 ## [1.0.20] - 2026-09-18
 
 ### Fixed

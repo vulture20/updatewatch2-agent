@@ -165,11 +165,19 @@ poll endpoint:
 | `rebootRequested` | An admin clicked "Reboot machine" (`POST .../reboot`). | `POST .../reboot-ack` |
 | `preDownloadWindowsUpdatesEnabled` | The admin-configured, fleet-wide `AdminSettings.PreDownloadWindowsUpdatesEnabled` toggle (Settings → General, default true) — not a queued action, just the live setting value re-sent every heartbeat. Windows-only: `UpdateCheckWorker` acts on it (via `IUpdateChecker.PreDownloadAsync`) only on a Windows agent; a Linux agent receives the same field but its own pre-download step is currently a no-op. | Not "cleared" — re-evaluated fresh every heartbeat from the live setting. |
 
-`agentUpdateAvailable`'s shape (`AgentUpdateOffer`), when non-null:
+`agentUpdateAvailable`'s shape (`AgentUpdateOffer`), when non-null — one
+slot per (platform kind, architecture) combination, plus three
+backward-compatibility aliases (see below):
 
 ```json
 {
   "version": "1.1.0",
+  "windowsInstallerX64": { "downloadUrl": "/api/agent/updates/UpdateWatch2Agent-Setup-1.1.0-x64.exe", "sha256": "...", "sizeBytes": 34500000 },
+  "windowsInstallerArm64": null,
+  "linuxDebX64": { "downloadUrl": "/api/agent/updates/updatewatch2-agent_1.1.0_amd64.deb", "sha256": "...", "sizeBytes": 4200000 },
+  "linuxDebArm64": { "downloadUrl": "/api/agent/updates/updatewatch2-agent_1.1.0_arm64.deb", "sha256": "...", "sizeBytes": 4300000 },
+  "linuxRpmX64": null,
+  "linuxRpmArm64": null,
   "windowsInstaller": { "downloadUrl": "/api/agent/updates/UpdateWatch2Agent-Setup-1.1.0-x64.exe", "sha256": "...", "sizeBytes": 34500000 },
   "linuxDeb": { "downloadUrl": "/api/agent/updates/updatewatch2-agent_1.1.0_amd64.deb", "sha256": "...", "sizeBytes": 4200000 },
   "linuxRpm": null
@@ -177,10 +185,22 @@ poll endpoint:
 ```
 
 Each asset slot is independently nullable (a release might not have built
-every package). `downloadUrl` is always a same-server-relative path under
-`/api/agent/updates/{fileName}` — an agent must never fetch release assets
-from GitHub directly (see `AgentUpdates/` in the root `CLAUDE.md` for why),
-and must verify `sha256` before applying anything it downloads.
+every package/architecture). `downloadUrl` is always a same-server-relative
+path under `/api/agent/updates/{fileName}` — an agent must never fetch
+release assets from GitHub directly (see `AgentUpdates/` in the root
+`CLAUDE.md` for why), and must verify `sha256` before applying anything it
+downloads.
+
+**`windowsInstaller`/`linuxDeb`/`linuxRpm` are not independent fields** —
+each is always exactly the same value as its `*X64` counterpart
+(`windowsInstallerX64`/`linuxDebX64`/`linuxRpmX64`), included purely so an
+agent build older than v1.0.20 (which only ever knew these three names,
+from before architecture-aware self-update existed) can still read a real
+x64 asset and self-update at least once, rather than finding nothing at
+all and getting permanently stuck — see `updatewatch2-server#24`, a real
+regression the original six-slot-only shape caused for the entire
+already-deployed fleet. A v1.0.20+ agent ignores these three and reads
+the six architecture-specific fields directly.
 
 ## `POST /api/agents/{hostname}/renew`
 
