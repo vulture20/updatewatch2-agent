@@ -968,7 +968,7 @@ public class WorkerTests
     public async Task HeartbeatWorker_applies_a_self_update_when_the_server_offers_a_newer_agent_version()
     {
         var cts = new CancellationTokenSource();
-        var offer = new AgentUpdateOffer("99.0.0", new AgentUpdateAssetOffer("/api/agent/updates/setup.exe", "abc", 1), null, null);
+        var offer = new AgentUpdateOffer("99.0.0", new AgentUpdateAssetOffer("/api/agent/updates/setup.exe", "abc", 1), null, null, null, null, null);
         AgentUpdateOffer? appliedWith = null;
 
         var client = new FakeServerClient(
@@ -1007,7 +1007,7 @@ public class WorkerTests
     {
         var cts = new CancellationTokenSource();
         var aliveCount = 0;
-        var offer = new AgentUpdateOffer("99.0.0", new AgentUpdateAssetOffer("/api/agent/updates/setup.exe", "abc", 1), null, null);
+        var offer = new AgentUpdateOffer("99.0.0", new AgentUpdateAssetOffer("/api/agent/updates/setup.exe", "abc", 1), null, null, null, null, null);
 
         var client = new FakeServerClient(
             onSendAlive: () =>

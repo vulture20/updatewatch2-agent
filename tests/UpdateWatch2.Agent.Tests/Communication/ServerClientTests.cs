@@ -177,9 +177,12 @@ public class ServerClientTests
                 agentUpdateAvailable = new
                 {
                     version = "99.0.0",
-                    windowsInstaller = new { downloadUrl = "/api/agent/updates/setup.exe", sha256 = "abc", sizeBytes = 123 },
-                    linuxDeb = (object?)null,
-                    linuxRpm = (object?)null,
+                    windowsInstallerX64 = new { downloadUrl = "/api/agent/updates/setup.exe", sha256 = "abc", sizeBytes = 123 },
+                    windowsInstallerArm64 = (object?)null,
+                    linuxDebX64 = (object?)null,
+                    linuxDebArm64 = (object?)null,
+                    linuxRpmX64 = (object?)null,
+                    linuxRpmArm64 = (object?)null,
                 },
             }),
         });
@@ -190,9 +193,9 @@ public class ServerClientTests
 
         Assert.NotNull(result.AgentUpdateAvailable);
         Assert.Equal("99.0.0", result.AgentUpdateAvailable!.Version);
-        Assert.NotNull(result.AgentUpdateAvailable.WindowsInstaller);
-        Assert.Equal("/api/agent/updates/setup.exe", result.AgentUpdateAvailable.WindowsInstaller!.DownloadUrl);
-        Assert.Null(result.AgentUpdateAvailable.LinuxDeb);
+        Assert.NotNull(result.AgentUpdateAvailable.WindowsInstallerX64);
+        Assert.Equal("/api/agent/updates/setup.exe", result.AgentUpdateAvailable.WindowsInstallerX64!.DownloadUrl);
+        Assert.Null(result.AgentUpdateAvailable.LinuxDebX64);
     }
 
     [Fact]

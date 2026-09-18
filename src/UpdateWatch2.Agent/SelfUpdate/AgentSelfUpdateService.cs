@@ -14,9 +14,11 @@ namespace UpdateWatch2.Agent.SelfUpdate;
 /// shape.
 /// </summary>
 /// <param name="assetKind">Which of an offer's asset slots applies to this platform — see <see cref="AgentUpdateAssetKind"/>.</param>
+/// <param name="assetArch">This agent's own architecture — combined with <paramref name="assetKind"/> to pick exactly one of the offer's six slots. See <see cref="AgentUpdateAssetArch"/>.</param>
 /// <param name="stagingDirectory">Where a downloaded artifact is written before being handed to <paramref name="applier"/>. Created if missing.</param>
 public class AgentSelfUpdateService(
     AgentUpdateAssetKind assetKind,
+    AgentUpdateAssetArch assetArch,
     string stagingDirectory,
     IServerClient serverClient,
     IPlatformUpdateApplier applier,
@@ -46,8 +48,8 @@ public class AgentSelfUpdateService(
         if (asset is null)
         {
             logger.LogWarning(
-                "Agent release {Version} has no asset for this platform ({AssetKind}) — nothing to self-update to yet.",
-                offer.Version, assetKind);
+                "Agent release {Version} has no asset for this platform ({AssetKind}, {AssetArch}) — nothing to self-update to yet.",
+                offer.Version, assetKind, assetArch);
             return SelfUpdateOutcome.NotApplicable;
         }
 
@@ -127,11 +129,14 @@ public class AgentSelfUpdateService(
         }
     }
 
-    private AgentUpdateAssetOffer? SelectAsset(AgentUpdateOffer offer) => assetKind switch
+    private AgentUpdateAssetOffer? SelectAsset(AgentUpdateOffer offer) => (assetKind, assetArch) switch
     {
-        AgentUpdateAssetKind.WindowsInstaller => offer.WindowsInstaller,
-        AgentUpdateAssetKind.LinuxDeb => offer.LinuxDeb,
-        AgentUpdateAssetKind.LinuxRpm => offer.LinuxRpm,
+        (AgentUpdateAssetKind.WindowsInstaller, AgentUpdateAssetArch.X64) => offer.WindowsInstallerX64,
+        (AgentUpdateAssetKind.WindowsInstaller, AgentUpdateAssetArch.Arm64) => offer.WindowsInstallerArm64,
+        (AgentUpdateAssetKind.LinuxDeb, AgentUpdateAssetArch.X64) => offer.LinuxDebX64,
+        (AgentUpdateAssetKind.LinuxDeb, AgentUpdateAssetArch.Arm64) => offer.LinuxDebArm64,
+        (AgentUpdateAssetKind.LinuxRpm, AgentUpdateAssetArch.X64) => offer.LinuxRpmX64,
+        (AgentUpdateAssetKind.LinuxRpm, AgentUpdateAssetArch.Arm64) => offer.LinuxRpmArm64,
         _ => null,
     };
 

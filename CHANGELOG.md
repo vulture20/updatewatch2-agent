@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.20] - 2026-09-18
+
+### Fixed
+
+- **Self-update never accounted for the new multi-arch releases (agent v1.0.18/v1.0.19) — a real gap found by a direct user question ("wurde beim Selfupdate berücksichtigt, dass es jetzt zusätzliche Releases gibt, und ist sichergestellt, dass immer die richtige Version installiert wird?"), not a live incident.** `AgentSelfUpdateService.SelectAsset` only ever picked one of an offer's three slots by platform kind (Windows/deb/rpm) — with the server now publishing two architectures per kind, and (before the matching server-side fix, server v1.3.24) both classifying identically and overwriting each other in a single slot, an arm64 agent could have been offered an x64 binary to self-update to, or vice versa, with nothing surfacing the mismatch anywhere. Fixed with a new, deliberately separate `AgentUpdateAssetArch` enum (`X64`/`Arm64`) — not folded into `AgentUpdateAssetKind` itself, since kind alone still fully determines the package format/command `Linux.LinuxPackageApplier` and `Program.cs`'s `IPlatformUpdateApplier`/`ILinuxUpdateSession` DI selection care about, with no reason to make those learn about architecture too. `Program.cs` now resolves this agent's own architecture once via `RuntimeInformation.OSArchitecture` (the OS's actual native architecture, not `ProcessArchitecture` — what SHOULD be installed here, decoupled from what happens to be currently running under emulation) and passes it into `AgentSelfUpdateService`'s constructor at all three call sites (Windows, apt, dnf/yum); `AgentSelfUpdateService.SelectAsset` now switches on `(assetKind, assetArch)` together to pick exactly one of `AgentUpdateOffer`'s six slots (protocol bumped to `1.6.0` for the wire shape change from three slots to six — the server-side note has the full rename/migration story). New test coverage confirms an arm64-configured service correctly picks the Arm64 slot even when both architectures are present in the same offer, and correctly refuses to fall back to the X64 slot when only that one is offered.
+
 ## [1.0.19] - 2026-09-18
 
 ### Added

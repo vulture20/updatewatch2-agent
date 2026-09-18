@@ -47,7 +47,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
     public async Task ApplyAsync_returns_NotApplicable_when_the_offered_version_is_not_newer_than_the_current_one()
     {
         var (serverClient, applier, service) = CreateService();
-        var offer = new AgentUpdateOffer("0.1.0", SampleAsset, null, null); // well below AgentVersion.Current
+        var offer = new AgentUpdateOffer("0.1.0", SampleAsset, null, null, null, null, null); // well below AgentVersion.Current
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -60,7 +60,46 @@ public class AgentSelfUpdateServiceTests : IDisposable
     public async Task ApplyAsync_returns_NotApplicable_when_the_offer_has_no_asset_for_this_platform()
     {
         var (serverClient, applier, service) = CreateService();
-        var offer = new AgentUpdateOffer("99.0.0", WindowsInstaller: null, LinuxDeb: SampleAsset, LinuxRpm: null);
+        var offer = new AgentUpdateOffer("99.0.0", WindowsInstallerX64: null, WindowsInstallerArm64: null, LinuxDebX64: SampleAsset, LinuxDebArm64: null, LinuxRpmX64: null, LinuxRpmArm64: null);
+
+        var outcome = await service.ApplyAsync(offer);
+
+        Assert.Equal(SelfUpdateOutcome.NotApplicable, outcome);
+        Assert.Equal(0, serverClient.DownloadCallCount);
+        Assert.Equal(0, applier.ApplyCallCount);
+    }
+
+    /// <summary>
+    /// Regression coverage for the real bug the (kind, architecture) asset
+    /// selection was added to fix (updatewatch2-agent#22/#23) — found by a
+    /// direct user question asking whether self-update had been considered
+    /// for the new multi-arch releases at all. Before this, an offer only
+    /// had one slot per kind, so an x64 agent and an arm64 agent of the
+    /// same kind couldn't be told apart at all; this asserts an arm64-
+    /// configured service correctly picks the Arm64 slot, not the X64 one,
+    /// even when both are present in the same offer.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_selects_the_asset_matching_this_agents_own_architecture()
+    {
+        var x64Asset = SampleAsset with { DownloadUrl = "/api/agent/updates/setup-x64.exe" };
+        var arm64Asset = SampleAsset with { DownloadUrl = "/api/agent/updates/setup-arm64.exe" };
+        var (serverClient, _, service) = CreateService(arch: AgentUpdateAssetArch.Arm64);
+        var offer = new AgentUpdateOffer("99.0.0", x64Asset, arm64Asset, null, null, null, null);
+
+        var outcome = await service.ApplyAsync(offer);
+
+        Assert.Equal(SelfUpdateOutcome.Applied, outcome);
+        Assert.Equal("/api/agent/updates/setup-arm64.exe", serverClient.LastDownloadUrl);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_returns_NotApplicable_when_only_the_other_architectures_asset_is_offered()
+    {
+        var (serverClient, applier, service) = CreateService(arch: AgentUpdateAssetArch.Arm64);
+        // Only the x64 slot is populated — an arm64-configured service must
+        // not fall back to it.
+        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -73,7 +112,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
     public async Task ApplyAsync_downloads_verifies_and_applies_a_newer_offer_with_a_matching_checksum()
     {
         var (serverClient, applier, service) = CreateService();
-        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -90,7 +129,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
     {
         var (serverClient, applier, service) = CreateService();
         var tamperedAsset = SampleAsset with { Sha256 = "0000000000000000000000000000000000000000000000000000000000000000" };
-        var offer = new AgentUpdateOffer("99.0.0", tamperedAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", tamperedAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -112,7 +151,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
         // rather than needing to fail the whole update.
         var (_, applier, service) = CreateService();
         var maliciousAsset = SampleAsset with { DownloadUrl = "/api/agent/updates/%2Fetc%2Fpasswd" };
-        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -126,7 +165,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
     {
         var (_, applier, service) = CreateService();
         var maliciousAsset = SampleAsset with { DownloadUrl = "/api/agent/updates/..%2F..%2F..%2Ftmp%2Fevil.exe" };
-        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -140,7 +179,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
     {
         var (serverClient, applier, service) = CreateService();
         var maliciousAsset = SampleAsset with { DownloadUrl = "/api/agent/updates/" };
-        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -163,7 +202,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
         // passed to DownloadFileAsync, no matter what it contains.
         var (serverClient, _, service) = CreateService();
         var maliciousAsset = SampleAsset with { DownloadUrl = "http://attacker.example/payload.exe" };
-        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -187,7 +226,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
         // in the first place.
         var (serverClient, _, service) = CreateService();
         var maliciousAsset = SampleAsset with { DownloadUrl = "//attacker.example/payload.exe" };
-        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", maliciousAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -199,7 +238,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
     public async Task ApplyAsync_returns_DownloadFailed_when_the_download_throws()
     {
         var (_, applier, service) = CreateService(onDownload: (_, _) => throw new HttpRequestException("simulated network failure"));
-        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -211,7 +250,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
     public async Task ApplyAsync_returns_ApplyFailed_when_the_platform_applier_returns_false()
     {
         var (_, applier, service) = CreateService(applierResult: false);
-        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -222,7 +261,7 @@ public class AgentSelfUpdateServiceTests : IDisposable
     public async Task ApplyAsync_returns_ApplyFailed_when_the_platform_applier_throws()
     {
         var (_, _, service) = CreateService(applierThrows: true);
-        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null);
+        var offer = new AgentUpdateOffer("99.0.0", SampleAsset, null, null, null, null, null);
 
         var outcome = await service.ApplyAsync(offer);
 
@@ -232,12 +271,13 @@ public class AgentSelfUpdateServiceTests : IDisposable
     private (FakeServerClient ServerClient, FakeApplier Applier, AgentSelfUpdateService Service) CreateService(
         Func<string, string, Task>? onDownload = null,
         bool applierResult = true,
-        bool applierThrows = false)
+        bool applierThrows = false,
+        AgentUpdateAssetArch arch = AgentUpdateAssetArch.X64)
     {
         var serverClient = new FakeServerClient(onDownload ?? WriteFakeContentAsync);
         var applier = new FakeApplier(applierResult, applierThrows);
         var service = new AgentSelfUpdateService(
-            AgentUpdateAssetKind.WindowsInstaller, _stagingDirectory, serverClient, applier, NullLogger<AgentSelfUpdateService>.Instance);
+            AgentUpdateAssetKind.WindowsInstaller, arch, _stagingDirectory, serverClient, applier, NullLogger<AgentSelfUpdateService>.Instance);
         return (serverClient, applier, service);
     }
 

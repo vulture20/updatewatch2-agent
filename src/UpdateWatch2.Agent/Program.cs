@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Security;
+using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using Microsoft.Extensions.Logging.EventLog;
 using UpdateWatch2.Agent;
@@ -83,6 +84,37 @@ var selfUpdateStagingDirectory = OperatingSystem.IsWindows()
     ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "UpdateWatch2", "agent-update")
     : "/var/lib/updatewatch2/agent-update";
 
+// Which of an AgentUpdateOffer's six (kind, architecture) asset slots
+// applies to THIS agent's own architecture — resolved once here and
+// combined with the existing platform-kind selection below at each
+// AgentSelfUpdateService construction site (updatewatch2-agent#22/#23).
+// RuntimeInformation.OSArchitecture, not ProcessArchitecture — this asks
+// what the HOST actually is, decoupled from whether this particular
+// process happens to be running under emulation (e.g. an x64 build
+// launched by hand on an arm64 host); self-update should always target
+// the architecture a fresh install on this machine would actually use.
+// Every real Windows/Linux target this project publishes for today is
+// X64 or Arm64 (no x86/other RID has ever been published), so anything
+// else logs a warning and falls back to X64 rather than guessing at a
+// slot that could never actually match a real offer either way.
+var agentArch = RuntimeInformation.OSArchitecture switch
+{
+    Architecture.X64 => AgentUpdateAssetArch.X64,
+    Architecture.Arm64 => AgentUpdateAssetArch.Arm64,
+    var other => LogUnknownArchAndFallBackToX64(other),
+};
+
+static AgentUpdateAssetArch LogUnknownArchAndFallBackToX64(Architecture other)
+{
+    // Deliberately not using the ILogger this file wires up elsewhere —
+    // this runs before builder.Build(), too early for that. Console
+    // output here still reaches the same place stdout/journald/the
+    // Windows Event Log capture does at startup.
+    Console.Error.WriteLine(
+        $"WARNING: this host's OS architecture ({other}) is not one this project publishes self-update assets for (only x64/arm64) — self-update will never find a matching asset.");
+    return AgentUpdateAssetArch.X64;
+}
+
 // Platform-agnostic (unlike IPlatformUpdateApplier) — plain file-age
 // bookkeeping on the same staging directory above, registered
 // unconditionally so it also runs (as a no-op) on a Linux host with no
@@ -103,6 +135,7 @@ if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<IAgentRebooter, WindowsAgentRebooter>();
     builder.Services.AddSingleton<IAgentSelfUpdater>(sp => new AgentSelfUpdateService(
         AgentUpdateAssetKind.WindowsInstaller,
+        agentArch,
         selfUpdateStagingDirectory,
         sp.GetRequiredService<IServerClient>(),
         sp.GetRequiredService<IPlatformUpdateApplier>(),
@@ -170,6 +203,7 @@ else if (OperatingSystem.IsLinux())
 #pragma warning restore CA1416
             builder.Services.AddSingleton<IAgentSelfUpdater>(sp => new AgentSelfUpdateService(
                 AgentUpdateAssetKind.LinuxDeb,
+                agentArch,
                 selfUpdateStagingDirectory,
                 sp.GetRequiredService<IServerClient>(),
                 sp.GetRequiredService<IPlatformUpdateApplier>(),
@@ -185,6 +219,7 @@ else if (OperatingSystem.IsLinux())
 #pragma warning restore CA1416
             builder.Services.AddSingleton<IAgentSelfUpdater>(sp => new AgentSelfUpdateService(
                 AgentUpdateAssetKind.LinuxRpm,
+                agentArch,
                 selfUpdateStagingDirectory,
                 sp.GetRequiredService<IServerClient>(),
                 sp.GetRequiredService<IPlatformUpdateApplier>(),

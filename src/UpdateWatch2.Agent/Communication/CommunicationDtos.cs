@@ -109,14 +109,31 @@ public record AgentUpdateAssetOffer(string DownloadUrl, string Sha256, long Size
 /// is known and agent auto-update is enabled server-side
 /// (updatewatch2-server#14/updatewatch2-agent#14) — mirrors the server's
 /// own <c>AgentUpdateOffer</c>. Each asset slot is independently nullable —
-/// a release might not (yet) carry every platform's package. See
-/// <c>SelfUpdate.IAgentSelfUpdater</c> for how this agent reacts to it.
+/// a release might not (yet) carry every platform/architecture's package.
+/// See <c>SelfUpdate.IAgentSelfUpdater</c> for how this agent reacts to it.
+///
+/// <para>
+/// Six slots, not three — one per (kind, architecture) combination, since
+/// updatewatch2-agent#22/#23 added a second architecture for every kind
+/// and the original three-slot shape had no way to tell an x64 asset apart
+/// from an arm64 one of the same kind (protocol bumped accordingly). Found
+/// by a direct user question asking whether self-update had been
+/// considered for the new multi-arch releases at all — it hadn't, at the
+/// time. <see cref="SelfUpdate.AgentSelfUpdateService"/> now selects the
+/// one slot matching both this agent's own platform (Windows/deb/rpm,
+/// unchanged from before) and its own architecture
+/// (<see cref="System.Runtime.InteropServices.RuntimeInformation.OSArchitecture"/>,
+/// resolved once in <c>Program.cs</c>).
+/// </para>
 /// </summary>
 public record AgentUpdateOffer(
     string Version,
-    AgentUpdateAssetOffer? WindowsInstaller,
-    AgentUpdateAssetOffer? LinuxDeb,
-    AgentUpdateAssetOffer? LinuxRpm);
+    AgentUpdateAssetOffer? WindowsInstallerX64,
+    AgentUpdateAssetOffer? WindowsInstallerArm64,
+    AgentUpdateAssetOffer? LinuxDebX64,
+    AgentUpdateAssetOffer? LinuxDebArm64,
+    AgentUpdateAssetOffer? LinuxRpmX64,
+    AgentUpdateAssetOffer? LinuxRpmArm64);
 
 /// <summary>
 /// Result of an alive heartbeat, now also carrying whether the server has a
