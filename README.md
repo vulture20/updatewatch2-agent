@@ -41,7 +41,7 @@ Companion repository: [updatewatch2-server](https://github.com/vulture20/updatew
 
 ## ✅ Project status
 
-UpdateWatch2 was built with **vibe coding**: implemented and iterated on with [Claude Code](https://claude.com/claude-code) (Anthropic) in conversation, rather than hand-written line by line, driven by a human-authored architecture brief. The certificate lifecycle, registration/heartbeat/self-update protocol, and the Linux `apt` update-detection path have been run live against a real server and a real package cache, and are covered by an automated (xUnit) test suite. Some pieces are explicitly **not yet live-verified against a real target host**, called out as such in code comments: the Windows Update API (WUApiLib COM) integration, the Linux `dnf`/`yum` path (this project's own dev environment is Debian-based), the NSIS Windows installer's install/uninstall actually run through `sc.exe`/a package manager, and the arm64 Windows installer/agent (no Windows-on-ARM host has ever been available to this project — the `win-arm64` publish itself has been confirmed to produce a genuine native ARM64 executable, just never run on a real device). Treat the pieces called out above as well-researched but not yet confirmed on a real target host — everything else has been live-verified end to end.
+UpdateWatch2 was built with **vibe coding**: implemented and iterated on with [Claude Code](https://claude.com/claude-code) (Anthropic) in conversation, rather than hand-written line by line, driven by a human-authored architecture brief. The certificate lifecycle, registration/heartbeat/self-update protocol, and the Linux `apt` update-detection path have been run live against a real server and a real package cache, and are covered by an automated (xUnit) test suite. Some pieces are explicitly **not yet live-verified against a real target host**, called out as such in code comments: the Windows Update API (WUApiLib COM) integration, the Linux `dnf`/`yum` path (this project's own dev environment is Debian-based), the NSIS Windows installer's install/uninstall actually run through `sc.exe`/a package manager, and the arm64 Windows installer/agent (no Windows-on-ARM host has ever been available to this project — the `win-arm64` publish itself has been confirmed to produce a genuine native ARM64 executable, just never run on a real device). The arm64 `.deb`/`.rpm` packages are a partial exception: each release's CI pipeline actually starts the published `linux-arm64` binary on a native (not emulated) arm64 runner and confirms it runs its real startup/registration code before packaging it, so that much is live-verified on real arm64 hardware — install/upgrade through `dpkg`/`rpm` itself on an arm64 host is not, same as the existing x86_64 `.rpm` gap. Treat the pieces called out above as well-researched but not yet confirmed on a real target host — everything else has been live-verified end to end.
 
 ## 🚀 Installation & configuration
 
@@ -71,14 +71,20 @@ UpdateWatch2Agent-Setup-0.15.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.co
 
 This is optional and fully backward compatible — omit `/CACERT=` and the original TOFU behavior is unchanged.
 
-### Linux (`.deb` / `.rpm`, x86_64)
+### Linux (`.deb` / `.rpm`, x86_64 or arm64)
+
+Every release publishes both architectures — `amd64`/`x86_64` packages for regular Linux hosts and `arm64`/`aarch64` ones for arm64 hosts (AWS Graviton, Ampere Altra, Raspberry Pi, etc.), each bundling a native, self-contained publish for that architecture. Download the file matching your host's architecture (`uname -m`: `x86_64` → the `amd64`/`x86_64` package, `aarch64` → the `arm64`/`aarch64` one):
 
 ```bash
-# Debian/Ubuntu
+# Debian/Ubuntu, x86_64
 sudo dpkg -i updatewatch2-agent_<version>_amd64.deb
+# Debian/Ubuntu, arm64
+sudo dpkg -i updatewatch2-agent_<version>_arm64.deb
 
-# RHEL/Fedora/openSUSE
+# RHEL/Fedora/openSUSE, x86_64
 sudo rpm -U updatewatch2-agent-<version>-1.x86_64.rpm
+# RHEL/Fedora/openSUSE, arm64
+sudo rpm -U updatewatch2-agent-<version>-1.aarch64.rpm
 ```
 
 This installs to `/opt/updatewatch2-agent/`, seeds a starter `/etc/updatewatch2/agent.conf` if one doesn't already exist, and ships a systemd unit (`updatewatch2-agent.service`) — **enabled but not started** until you set a server address:

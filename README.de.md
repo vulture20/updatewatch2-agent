@@ -41,7 +41,7 @@ Begleit-Repository: [updatewatch2-server](https://github.com/vulture20/updatewat
 
 ## ✅ Projektstatus
 
-UpdateWatch2 wurde per **Vibe-Coding** entwickelt: implementiert und iteriert im Dialog mit [Claude Code](https://claude.com/claude-code) (Anthropic), statt Zeile für Zeile von Hand geschrieben, angetrieben von einem menschlich verfassten Architektur-Briefing. Der Zertifikats-Lebenszyklus, das Registrierungs-/Heartbeat-/Selbst-Update-Protokoll sowie der Linux-`apt`-Update-Erkennungspfad wurden live gegen einen echten Server und einen echten Paket-Cache ausgeführt und sind durch eine automatisierte (xUnit-)Testsuite abgedeckt. Einige Teile sind ausdrücklich **noch nicht gegen ein echtes Zielsystem live verifiziert**, im Code entsprechend gekennzeichnet: die Windows-Update-API-Integration (WUApiLib-COM), der Linux-`dnf`/`yum`-Pfad (die eigene Entwicklungsumgebung dieses Projekts ist Debian-basiert) sowie das tatsächliche Installations-/Deinstallationsverhalten des NSIS-Windows-Installers über `sc.exe`/einen Paketmanager, und der arm64-Windows-Installer/-Agent (dem Projekt stand nie ein echtes Windows-on-ARM-Gerät zur Verfügung — die `win-arm64`-Veröffentlichung selbst wurde bestätigt eine echte native ARM64-Programmdatei zu erzeugen, nur eben nie auf einem echten Gerät ausgeführt). Betrachte die oben genannten Teile als gut recherchiert, aber noch nicht gegen ein echtes Zielsystem bestätigt — alles andere wurde durchgängig live verifiziert.
+UpdateWatch2 wurde per **Vibe-Coding** entwickelt: implementiert und iteriert im Dialog mit [Claude Code](https://claude.com/claude-code) (Anthropic), statt Zeile für Zeile von Hand geschrieben, angetrieben von einem menschlich verfassten Architektur-Briefing. Der Zertifikats-Lebenszyklus, das Registrierungs-/Heartbeat-/Selbst-Update-Protokoll sowie der Linux-`apt`-Update-Erkennungspfad wurden live gegen einen echten Server und einen echten Paket-Cache ausgeführt und sind durch eine automatisierte (xUnit-)Testsuite abgedeckt. Einige Teile sind ausdrücklich **noch nicht gegen ein echtes Zielsystem live verifiziert**, im Code entsprechend gekennzeichnet: die Windows-Update-API-Integration (WUApiLib-COM), der Linux-`dnf`/`yum`-Pfad (die eigene Entwicklungsumgebung dieses Projekts ist Debian-basiert) sowie das tatsächliche Installations-/Deinstallationsverhalten des NSIS-Windows-Installers über `sc.exe`/einen Paketmanager, und der arm64-Windows-Installer/-Agent (dem Projekt stand nie ein echtes Windows-on-ARM-Gerät zur Verfügung — die `win-arm64`-Veröffentlichung selbst wurde bestätigt eine echte native ARM64-Programmdatei zu erzeugen, nur eben nie auf einem echten Gerät ausgeführt). Die arm64-`.deb`/`.rpm`-Pakete sind eine Teilausnahme: jede CI-Pipeline eines Releases startet die veröffentlichte `linux-arm64`-Programmdatei tatsächlich auf einem nativen (nicht emulierten) arm64-Runner und bestätigt, dass sie ihren echten Start-/Registrierungscode ausführt, bevor sie verpackt wird — das ist also live auf echter arm64-Hardware verifiziert; Installation/Upgrade über `dpkg`/`rpm` selbst auf einem arm64-Host dagegen nicht, genau wie die bestehende Lücke beim x86_64-`.rpm`. Betrachte die oben genannten Teile als gut recherchiert, aber noch nicht gegen ein echtes Zielsystem bestätigt — alles andere wurde durchgängig live verifiziert.
 
 ## 🚀 Installation & Konfiguration
 
@@ -71,14 +71,20 @@ UpdateWatch2Agent-Setup-0.15.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.co
 
 Das ist optional und vollständig abwärtskompatibel — ohne `/CACERT=` bleibt das ursprüngliche TOFU-Verhalten unverändert.
 
-### Linux (`.deb` / `.rpm`, x86_64)
+### Linux (`.deb` / `.rpm`, x86_64 oder arm64)
+
+Jedes Release veröffentlicht beide Architekturen — `amd64`/`x86_64`-Pakete für reguläre Linux-Hosts und `arm64`/`aarch64` für arm64-Hosts (AWS Graviton, Ampere Altra, Raspberry Pi, ...), jeweils mit einer nativen, self-contained Veröffentlichung für diese Architektur. Die zur Host-Architektur passende Datei herunterladen (`uname -m`: `x86_64` → das `amd64`/`x86_64`-Paket, `aarch64` → das `arm64`/`aarch64`-Paket):
 
 ```bash
-# Debian/Ubuntu
+# Debian/Ubuntu, x86_64
 sudo dpkg -i updatewatch2-agent_<Version>_amd64.deb
+# Debian/Ubuntu, arm64
+sudo dpkg -i updatewatch2-agent_<Version>_arm64.deb
 
-# RHEL/Fedora/openSUSE
+# RHEL/Fedora/openSUSE, x86_64
 sudo rpm -U updatewatch2-agent-<Version>-1.x86_64.rpm
+# RHEL/Fedora/openSUSE, arm64
+sudo rpm -U updatewatch2-agent-<Version>-1.aarch64.rpm
 ```
 
 Dies installiert nach `/opt/updatewatch2-agent/`, legt eine Start-Konfiguration `/etc/updatewatch2/agent.conf` an, falls noch keine existiert, und liefert eine systemd-Unit (`updatewatch2-agent.service`) mit — **aktiviert, aber nicht gestartet**, bis eine Serveradresse gesetzt ist:
