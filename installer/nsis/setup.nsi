@@ -36,6 +36,28 @@
 ; relative to this script) must already contain a `dotnet publish -r win-x64
 ; --self-contained -p:PublishSingleFile=true` output before this runs.
 ;
+; ARCH (default: x64, updatewatch2-agent#23) only ever names the output
+; file (UpdateWatch2Agent-Setup-<VERSION>-<ARCH>.exe) and, via the CI
+; caller, which PUBLISH_DIR/RID payload gets bundled — e.g.
+;   makensis /DVERSION=1.0.17 /DARCH=arm64 /DPUBLISH_DIR=..\..\publish\win-arm64 setup.nsi
+; It does NOT change anything about how this SCRIPT itself runs. The
+; installer/uninstaller stub this produces is, as always, a plain 32-bit
+; NSIS executable — that's true for the x64 leg today and stays true for
+; the arm64 leg too, deliberately: Windows-on-ARM has run x86 binaries
+; under emulation since its very first release (long before x64 emulation
+; arrived in Windows 11), so this script needs no ARM64-aware macros of its
+; own to run there — only the PAYLOAD it lays down (UpdateWatch2.Agent.exe)
+; needs to actually be win-arm64-native, which is purely a `dotnet publish
+; -r win-arm64` concern, not something this script does. SetRegView 64/
+; $PROGRAMFILES64 below are unaffected either way: both already resolve to
+; the native 64-bit registry view/Program Files location on any 64-bit
+; Windows, ARM64 included, regardless of the calling process's own
+; architecture — the exact mechanism this script already relies on to
+; install correctly from a 32-bit stub on 64-bit x64 Windows today.
+; **Not live-verified against a real Windows-on-ARM device** — no such
+; host has ever been available to this project; same standing caveat as
+; every other Windows-specific claim in this codebase (CLAUDE.md).
+;
 ; Uninstall removes the service, the install directory, the registry key
 ; tree below (all of it, not just the values this installer itself wrote —
 ; WindowsRegistryConfigStore.cs's doc comment requires no residue), the
@@ -47,8 +69,11 @@
 !ifndef VERSION
   !define VERSION "0.0.0"
 !endif
+!ifndef ARCH
+  !define ARCH "x64"
+!endif
 !ifndef PUBLISH_DIR
-  !define PUBLISH_DIR "..\..\publish\win-x64"
+  !define PUBLISH_DIR "..\..\publish\win-${ARCH}"
 !endif
 
 !define PRODUCT_NAME "UpdateWatch2 Agent"
@@ -82,7 +107,7 @@
 !include "x64.nsh"
 
 Name "${PRODUCT_NAME}"
-OutFile "UpdateWatch2Agent-Setup-${VERSION}-x64.exe"
+OutFile "UpdateWatch2Agent-Setup-${VERSION}-${ARCH}.exe"
 InstallDir "$PROGRAMFILES64\UpdateWatch2 Agent"
 InstallDirRegKey HKLM "${CONFIG_KEY}" "InstallDir"
 RequestExecutionLevel admin

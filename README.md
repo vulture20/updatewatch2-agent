@@ -41,7 +41,7 @@ Companion repository: [updatewatch2-server](https://github.com/vulture20/updatew
 
 ## ✅ Project status
 
-UpdateWatch2 was built with **vibe coding**: implemented and iterated on with [Claude Code](https://claude.com/claude-code) (Anthropic) in conversation, rather than hand-written line by line, driven by a human-authored architecture brief. The certificate lifecycle, registration/heartbeat/self-update protocol, and the Linux `apt` update-detection path have been run live against a real server and a real package cache, and are covered by an automated (xUnit) test suite. Some pieces are explicitly **not yet live-verified against a real target host**, called out as such in code comments: the Windows Update API (WUApiLib COM) integration, the Linux `dnf`/`yum` path (this project's own dev environment is Debian-based), and the NSIS Windows installer's install/uninstall actually run through `sc.exe`/a package manager. Treat the pieces called out above as well-researched but not yet confirmed on a real target host — everything else has been live-verified end to end.
+UpdateWatch2 was built with **vibe coding**: implemented and iterated on with [Claude Code](https://claude.com/claude-code) (Anthropic) in conversation, rather than hand-written line by line, driven by a human-authored architecture brief. The certificate lifecycle, registration/heartbeat/self-update protocol, and the Linux `apt` update-detection path have been run live against a real server and a real package cache, and are covered by an automated (xUnit) test suite. Some pieces are explicitly **not yet live-verified against a real target host**, called out as such in code comments: the Windows Update API (WUApiLib COM) integration, the Linux `dnf`/`yum` path (this project's own dev environment is Debian-based), the NSIS Windows installer's install/uninstall actually run through `sc.exe`/a package manager, and the arm64 Windows installer/agent (no Windows-on-ARM host has ever been available to this project — the `win-arm64` publish itself has been confirmed to produce a genuine native ARM64 executable, just never run on a real device). Treat the pieces called out above as well-researched but not yet confirmed on a real target host — everything else has been live-verified end to end.
 
 ## 🚀 Installation & configuration
 
@@ -49,7 +49,7 @@ Every tagged release ([`release.yml`](.github/workflows/release.yml), triggered 
 
 ### Windows
 
-Download `UpdateWatch2Agent-Setup-<version>-x64.exe` and run it:
+Every release publishes two installers — `UpdateWatch2Agent-Setup-<version>-x64.exe` for regular (x64) Windows and `UpdateWatch2Agent-Setup-<version>-arm64.exe` for Windows-on-ARM devices (Snapdragon-based laptops, Surface Pro X, etc.), each bundling a native, self-contained publish for that architecture. Download the one matching your device and run it — everything below applies identically to both, just with the matching filename:
 
 ```powershell
 # Interactive install — prompts for the server address/port

@@ -21,8 +21,28 @@ jobs:
       - run: dotnet test
 
   # Cross-published from Linux — makensis runs fine on Linux, and
-  # `dotnet publish -r win-x64` needs no Windows host, so this avoids a
-  # (slower, pricier) windows-latest runner entirely.
+  # `dotnet publish -r <RID>` needs no Windows host, so this avoids a
+  # (slower, pricier) windows-latest runner entirely, for either
+  # architecture. Builds win-x64 and win-arm64 (updatewatch2-agent#23 —
+  # raised after a direct user question, "Wäre auch ein arm64-Release
+  # denkbar?") sequentially in one job rather than a matrix, deliberately:
+  # `dotnet publish -r win-arm64` is a pure cross-compile flag exactly like
+  # the existing win-x64 one, so there's no meaningful parallelism to gain,
+  # and a single job lets both installers share one "windows-installer"
+  # artifact (the existing UpdateWatch2Agent-Setup-*.exe glob already
+  # matches both filenames once ARCH is embedded in each) without touching
+  # the release job's download step at all. setup.nsi's own runtime logic
+  # (SetRegView 64/$PROGRAMFILES64/x64.nsh) needs no ARM64-specific
+  # handling — see that script's own header comment for why: the
+  # installer stub stays a plain 32-bit NSIS executable for both
+  # architectures, relying on Windows-on-ARM's x86 emulation layer the
+  # same way it already relies on x64 Windows' own WOW64 registry
+  # redirection; only the bundled PAYLOAD (UpdateWatch2.Agent.exe) needs
+  # to actually be win-arm64-native, which is purely what `dotnet publish
+  # -r win-arm64` below produces. **Not live-verified against a real
+  # Windows-on-ARM device** — no such host has ever been available to this
+  # project; same standing caveat as every other Windows-specific claim in
+  # this codebase (CLAUDE.md).
   windows-installer:
     needs: test
     runs-on: ubuntu-latest
@@ -36,6 +56,9 @@ jobs:
         id: version
         run: echo "value=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
 
+      - name: Install NSIS
+        run: sudo apt-get update && sudo apt-get install -y nsis
+
       - name: Publish self-contained win-x64
         run: >
           dotnet publish src/UpdateWatch2.Agent -c Release -r win-x64
@@ -44,12 +67,21 @@ jobs:
           -p:IncludeNativeLibrariesForSelfExtract=true
           -o publish/win-x64
 
-      - name: Install NSIS
-        run: sudo apt-get update && sudo apt-get install -y nsis
-
-      - name: Build installer
+      - name: Build x64 installer
         working-directory: installer/nsis
-        run: makensis -DVERSION=${{ steps.version.outputs.value }} setup.nsi
+        run: makensis -DVERSION=${{ steps.version.outputs.value }} -DARCH=x64 setup.nsi
+
+      - name: Publish self-contained win-arm64
+        run: >
+          dotnet publish src/UpdateWatch2.Agent -c Release -r win-arm64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/win-arm64
+
+      - name: Build arm64 installer
+        working-directory: installer/nsis
+        run: makensis -DVERSION=${{ steps.version.outputs.value }} -DARCH=arm64 setup.nsi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

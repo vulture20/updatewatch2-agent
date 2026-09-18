@@ -41,7 +41,7 @@ Begleit-Repository: [updatewatch2-server](https://github.com/vulture20/updatewat
 
 ## ✅ Projektstatus
 
-UpdateWatch2 wurde per **Vibe-Coding** entwickelt: implementiert und iteriert im Dialog mit [Claude Code](https://claude.com/claude-code) (Anthropic), statt Zeile für Zeile von Hand geschrieben, angetrieben von einem menschlich verfassten Architektur-Briefing. Der Zertifikats-Lebenszyklus, das Registrierungs-/Heartbeat-/Selbst-Update-Protokoll sowie der Linux-`apt`-Update-Erkennungspfad wurden live gegen einen echten Server und einen echten Paket-Cache ausgeführt und sind durch eine automatisierte (xUnit-)Testsuite abgedeckt. Einige Teile sind ausdrücklich **noch nicht gegen ein echtes Zielsystem live verifiziert**, im Code entsprechend gekennzeichnet: die Windows-Update-API-Integration (WUApiLib-COM), der Linux-`dnf`/`yum`-Pfad (die eigene Entwicklungsumgebung dieses Projekts ist Debian-basiert) sowie das tatsächliche Installations-/Deinstallationsverhalten des NSIS-Windows-Installers über `sc.exe`/einen Paketmanager. Betrachte die oben genannten Teile als gut recherchiert, aber noch nicht gegen ein echtes Zielsystem bestätigt — alles andere wurde durchgängig live verifiziert.
+UpdateWatch2 wurde per **Vibe-Coding** entwickelt: implementiert und iteriert im Dialog mit [Claude Code](https://claude.com/claude-code) (Anthropic), statt Zeile für Zeile von Hand geschrieben, angetrieben von einem menschlich verfassten Architektur-Briefing. Der Zertifikats-Lebenszyklus, das Registrierungs-/Heartbeat-/Selbst-Update-Protokoll sowie der Linux-`apt`-Update-Erkennungspfad wurden live gegen einen echten Server und einen echten Paket-Cache ausgeführt und sind durch eine automatisierte (xUnit-)Testsuite abgedeckt. Einige Teile sind ausdrücklich **noch nicht gegen ein echtes Zielsystem live verifiziert**, im Code entsprechend gekennzeichnet: die Windows-Update-API-Integration (WUApiLib-COM), der Linux-`dnf`/`yum`-Pfad (die eigene Entwicklungsumgebung dieses Projekts ist Debian-basiert) sowie das tatsächliche Installations-/Deinstallationsverhalten des NSIS-Windows-Installers über `sc.exe`/einen Paketmanager, und der arm64-Windows-Installer/-Agent (dem Projekt stand nie ein echtes Windows-on-ARM-Gerät zur Verfügung — die `win-arm64`-Veröffentlichung selbst wurde bestätigt eine echte native ARM64-Programmdatei zu erzeugen, nur eben nie auf einem echten Gerät ausgeführt). Betrachte die oben genannten Teile als gut recherchiert, aber noch nicht gegen ein echtes Zielsystem bestätigt — alles andere wurde durchgängig live verifiziert.
 
 ## 🚀 Installation & Konfiguration
 
@@ -49,7 +49,7 @@ Jedes getaggte Release ([`release.yml`](.github/workflows/release.yml), ausgelö
 
 ### Windows
 
-`UpdateWatch2Agent-Setup-<Version>-x64.exe` herunterladen und ausführen:
+Jedes Release veröffentlicht zwei Installer — `UpdateWatch2Agent-Setup-<Version>-x64.exe` für reguläres (x64-)Windows und `UpdateWatch2Agent-Setup-<Version>-arm64.exe` für Windows-on-ARM-Geräte (Snapdragon-basierte Laptops, Surface Pro X, ...), jeweils mit einer nativen, self-contained Veröffentlichung für diese Architektur. Den passenden herunterladen und ausführen — alles Folgende gilt identisch für beide, nur mit dem entsprechenden Dateinamen:
 
 ```powershell
 # Interaktive Installation — fragt nach Serveradresse/-port
