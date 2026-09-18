@@ -343,6 +343,35 @@ builder.Services.AddHttpClient<IServerClient, ServerClient>((sp, client) =>
 })
 .ConfigurePrimaryHttpMessageHandler(sp => sp.GetRequiredService<SocketsHttpHandler>());
 
+// AddHttpClient above wraps the shared handler in Microsoft.Extensions.Http's
+// own automatic logging handlers, which duplicate ServerClient's own
+// explicit LogDebug calls for the same request/response with a second,
+// independent set of lines ("Start/End processing HTTP request",
+// "Sending HTTP request"/"Received HTTP response headers", and, on a
+// genuine transport failure, "HTTP request failed" with the full
+// exception) — all hardcoded at Information severity by that NuGet
+// package, unlike this project's own log calls, so their level can't
+// just be edited at the source (log-level-audit.md rows 230–233/246–247).
+// A plain Default-level comparison can only raise/lower the MINIMUM level
+// a category logs at, never change an individual message's own severity,
+// so demoting these to Debug-only visibility needs the category gated
+// explicitly: only when logLevelState.Current is genuinely Debug does
+// this let the Information-level messages through (same as every other
+// category at that setting); at every less verbose setting the category
+// is raised to Warning instead — a complete mute, not partial, since
+// nothing in either category ever logs above Information. Reads the same
+// mutable logLevelState the generic AddFilter above does, so a
+// server-pushed LogLevel change (HeartbeatWorker.ApplyPushedSettings)
+// reaches this the moment it calls logLevelState.Update(...), with no
+// extra plumbing needed — identical reasoning to the EventLog-provider-
+// specific AddFilter<T> call further down.
+builder.Logging.AddFilter(
+    "System.Net.Http.HttpClient.IServerClient.LogicalHandler",
+    level => level >= (logLevelState.Current <= LogLevel.Debug ? LogLevel.Debug : LogLevel.Warning));
+builder.Logging.AddFilter(
+    "System.Net.Http.HttpClient.IServerClient.ClientHandler",
+    level => level >= (logLevelState.Current <= LogLevel.Debug ? LogLevel.Debug : LogLevel.Warning));
+
 builder.Services.AddHostedService<RegistrationWorker>();
 
 // Registered as a singleton first, then exposed both as the hosted
