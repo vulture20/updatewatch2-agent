@@ -92,6 +92,30 @@ public class AgentOptions
     public int CertificateMaintenanceIntervalSeconds { get; set; } = 900;
 
     /// <summary>
+    /// Linux only (no-op on Windows, which has no equivalent concept):
+    /// when true, passes <c>apt-get</c>'s <c>--allow-unauthenticated</c>
+    /// (<see cref="UpdateCheck.Linux.AptUpdateSession"/>) or <c>dnf</c>/
+    /// <c>yum</c>'s <c>--nogpgcheck</c> (<see cref="UpdateCheck.Linux.DnfUpdateSession"/>)
+    /// on every install/pre-download command, letting this agent proceed
+    /// with packages from a repository whose signature can't be verified
+    /// (e.g. a missing or not-yet-imported GPG key) instead of failing
+    /// the whole transaction. Security-relevant — bypassing package
+    /// authentication is a real trust decision, not a cosmetic one — so
+    /// this defaults to <c>false</c> and is local-only, deliberately not
+    /// something the server can push (unlike <see cref="LogLevel"/>/the
+    /// update-check cadence): an admin who wants this on a given host has
+    /// to opt in by hand, in that host's own config file. Added after a
+    /// real production incident where a genuinely untrusted/unsigned repo
+    /// on one host made every triggered install fail with apt's own
+    /// "unauthenticated packages" error — the correct fix there was
+    /// importing the repository's GPG key, not this flag, which exists
+    /// for the rarer case where an admin has already made that trust
+    /// decision deliberately (e.g. a local/air-gapped repository that
+    /// will never be signed) and wants this agent to stop refusing it.
+    /// </summary>
+    public bool AllowUnauthenticatedPackages { get; set; }
+
+    /// <summary>
     /// How long a downloaded self-update package (updatewatch2-agent#14)
     /// is kept in the local staging directory before
     /// <see cref="SelfUpdate.SelfUpdateStagingCleaner"/> deletes it —

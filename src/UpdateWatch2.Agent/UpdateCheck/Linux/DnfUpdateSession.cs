@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.Versioning;
+using UpdateWatch2.Agent.Configuration;
 
 namespace UpdateWatch2.Agent.UpdateCheck.Linux;
 
@@ -13,7 +14,7 @@ namespace UpdateWatch2.Agent.UpdateCheck.Linux;
 /// sandbox is Debian-based and has neither tool installed.
 /// </summary>
 [SupportedOSPlatform("linux")]
-public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSession
+public class DnfUpdateSession(ILogger<DnfUpdateSession> logger, AgentOptions options) : ILinuxUpdateSession
 {
     // dnf and yum both use exit code 100 to mean "updates are available"
     // (not an error) and 0 to mean "no updates" — documented in both
@@ -60,20 +61,34 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
     /// that being enforced before this fix, and dnf's argparse-based
     /// parser honors <c>--</c> the same standard way apt-get's does).
     /// </summary>
-    public static string[] BuildInstallArgs(IReadOnlyList<string>? packageNames) =>
+    /// <param name="packageNames">Null updates everything pending; non-null scopes to just these.</param>
+    /// <param name="allowUnauthenticated">
+    /// Mirrors <see cref="AgentOptions.AllowUnauthenticatedPackages"/> —
+    /// when true, adds dnf/yum's own <c>--nogpgcheck</c> flag (their
+    /// equivalent of apt-get's <c>--allow-unauthenticated</c>) so a
+    /// package with an invalid/missing GPG signature doesn't fail the
+    /// whole transaction. Placed before the <c>--</c> marker like every
+    /// other flag here, never after it.
+    /// </param>
+    public static string[] BuildInstallArgs(IReadOnlyList<string>? packageNames, bool allowUnauthenticated = false) =>
         packageNames is null
             // null: update everything pending, the original behavior.
-            ? ["-y", "update"]
+            ? ["-y", .. allowUnauthenticated ? new[] { "--nogpgcheck" } : [], "update"]
             // Non-null: dnf/yum both accept specific package names as
             // trailing arguments to restrict the update to just those —
             // an admin's way to install only some pending updates while
             // sparing others.
-            : ["-y", "update", "--", .. packageNames];
+            : ["-y", .. allowUnauthenticated ? new[] { "--nogpgcheck" } : [], "update", "--", .. packageNames];
 
     public async Task<InstallResult> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
     {
+        if (options.AllowUnauthenticatedPackages)
+        {
+            logger.LogWarning("AllowUnauthenticatedPackages is enabled; dnf/yum will accept packages with an invalid or missing GPG signature.");
+        }
+
         var binary = ResolveBinary();
-        var args = BuildInstallArgs(packageNames);
+        var args = BuildInstallArgs(packageNames, options.AllowUnauthenticatedPackages);
 
         var result = await ShellCommand.RunAsync(binary, args, ct, logger: logger);
         if (result.ExitCode != 0)
@@ -135,12 +150,19 @@ public class DnfUpdateSession(ILogger<DnfUpdateSession> logger) : ILinuxUpdateSe
     /// needs-restarting fallback already applies to a missing optional
     /// tool.
     /// </summary>
-    public static string[] BuildDownloadOnlyArgs() => ["-y", "update", "--downloadonly"];
+    /// <param name="allowUnauthenticated">See <see cref="BuildInstallArgs"/>'s own parameter of the same name.</param>
+    public static string[] BuildDownloadOnlyArgs(bool allowUnauthenticated = false) =>
+        ["-y", .. allowUnauthenticated ? new[] { "--nogpgcheck" } : [], "update", "--downloadonly"];
 
     public async Task<PreDownloadResult> DownloadOnlyAsync(CancellationToken ct)
     {
+        if (options.AllowUnauthenticatedPackages)
+        {
+            logger.LogWarning("AllowUnauthenticatedPackages is enabled; dnf/yum will accept packages with an invalid or missing GPG signature.");
+        }
+
         var binary = ResolveBinary();
-        var args = BuildDownloadOnlyArgs();
+        var args = BuildDownloadOnlyArgs(options.AllowUnauthenticatedPackages);
 
         var result = await ShellCommand.RunAsync(binary, args, ct, logger: logger);
         if (result.ExitCode != 0)

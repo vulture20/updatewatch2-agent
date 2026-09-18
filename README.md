@@ -105,6 +105,7 @@ Every key below is used verbatim in both places: as the registry *value name* un
 | Heartbeat interval | `AliveIntervalMinutes` | `5` | How often this agent sends an alive message. |
 | Log level | `LogLevel` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
 | Certificate renewal lead time | `CertificateRenewalLeadTimeDays` | `60` | Days before its certificate's expiry that this agent proactively requests a fresh one. |
+| Allow unauthenticated packages | `AllowUnauthenticatedPackages` | `false` | **Linux only.** Passes apt-get's `--allow-unauthenticated` / dnf's and yum's `--nogpgcheck` on install and pre-download, so a repository with an invalid or missing signature doesn't fail the whole transaction. Security-relevant — only enable this if you've deliberately decided to trust an unsigned/local repository; the usual fix for an "unauthenticated packages" error is importing that repository's GPG key, not this. Local-only, never pushed by the server. |
 
 `RegistrationToken` and `ClientCertificateThumbprint` are also stored here but are managed automatically by the agent itself — never set these by hand except when placing a fresh token an admin gave you for re-issuance (see the server's admin UI). No service restart is required after changing any of these; the agent picks config changes up on its own maintenance/heartbeat cadence.
 

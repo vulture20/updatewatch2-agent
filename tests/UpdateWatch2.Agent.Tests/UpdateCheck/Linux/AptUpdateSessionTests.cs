@@ -60,10 +60,44 @@ public class AptUpdateSessionTests
     }
 
     [Fact]
+    public void BuildInstallArgs_adds_allow_unauthenticated_when_enabled()
+    {
+        var args = AptUpdateSession.BuildInstallArgs(packageNames: null, allowUnauthenticated: true);
+
+        Assert.Equal(["-y", "--allow-unauthenticated", "-o", "Dpkg::Options::=--force-confold", "dist-upgrade"], args);
+    }
+
+    [Fact]
+    public void BuildInstallArgs_places_allow_unauthenticated_before_the_end_of_options_marker()
+    {
+        var args = AptUpdateSession.BuildInstallArgs(["nginx"], allowUnauthenticated: true);
+
+        Assert.Equal(
+            ["-y", "--allow-unauthenticated", "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", "--", "nginx"],
+            args);
+    }
+
+    [Fact]
+    public void BuildInstallArgs_omits_allow_unauthenticated_by_default()
+    {
+        var args = AptUpdateSession.BuildInstallArgs(packageNames: null);
+
+        Assert.DoesNotContain("--allow-unauthenticated", args);
+    }
+
+    [Fact]
     public void BuildDownloadOnlyArgs_downloads_everything_pending_without_installing()
     {
         var args = AptUpdateSession.BuildDownloadOnlyArgs();
 
         Assert.Equal(["-y", "--download-only", "dist-upgrade"], args);
+    }
+
+    [Fact]
+    public void BuildDownloadOnlyArgs_adds_allow_unauthenticated_when_enabled()
+    {
+        var args = AptUpdateSession.BuildDownloadOnlyArgs(allowUnauthenticated: true);
+
+        Assert.Equal(["-y", "--allow-unauthenticated", "--download-only", "dist-upgrade"], args);
     }
 }

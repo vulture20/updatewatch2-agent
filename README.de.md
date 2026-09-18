@@ -105,6 +105,7 @@ Jeder Schlüssel unten wird wortgleich an beiden Stellen verwendet: als Registry
 | Heartbeat-Intervall | `AliveIntervalMinutes` | `5` | Wie oft dieser Agent eine Alive-Meldung sendet. |
 | Log-Level | `LogLevel` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
 | Vorlaufzeit Zertifikatserneuerung | `CertificateRenewalLeadTimeDays` | `60` | Tage vor Ablauf seines Zertifikats, ab denen dieser Agent proaktiv ein neues anfordert. |
+| Nicht authentifizierte Pakete zulassen | `AllowUnauthenticatedPackages` | `false` | **Nur Linux.** Übergibt bei Installation und Vorab-Download apt-gets `--allow-unauthenticated` bzw. dnfs/yums `--nogpgcheck`, damit ein Repository mit ungültiger oder fehlender Signatur nicht die gesamte Transaktion scheitern lässt. Sicherheitsrelevant — nur aktivieren, wenn bewusst entschieden wurde, einem unsignierten/lokalen Repository zu vertrauen; der übliche Fix für einen Fehler wegen "unauthenticated packages" ist der Import des GPG-Schlüssels dieses Repositories, nicht diese Option. Rein lokal, wird nie vom Server gepusht. |
 
 `RegistrationToken` und `ClientCertificateThumbprint` liegen ebenfalls hier, werden aber vom Agent selbst automatisch verwaltet — von Hand nur setzen, wenn ein Admin dir für eine Neuausstellung ein frisches Token gegeben hat (siehe die Admin-Oberfläche des Servers). Nach Änderung eines dieser Werte ist kein Dienst-Neustart nötig — der Agent übernimmt Konfigurationsänderungen von selbst im nächsten Wartungs-/Heartbeat-Takt.
 

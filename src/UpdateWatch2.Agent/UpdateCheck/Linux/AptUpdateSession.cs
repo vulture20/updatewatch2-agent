@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using UpdateWatch2.Agent.Configuration;
 
 namespace UpdateWatch2.Agent.UpdateCheck.Linux;
 
@@ -21,7 +22,7 @@ namespace UpdateWatch2.Agent.UpdateCheck.Linux;
 /// </para>
 /// </summary>
 [SupportedOSPlatform("linux")]
-public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSession
+public class AptUpdateSession(ILogger<AptUpdateSession> logger, AgentOptions options) : ILinuxUpdateSession
 {
     // Written by update-notifier-common after certain installs (most
     // notably a new kernel) — absent both when no reboot is needed AND
@@ -78,21 +79,42 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
     /// <c>apt-get</c>'s GNU-style argument parser, regardless of what it
     /// starts with.
     /// </summary>
-    public static string[] BuildInstallArgs(IReadOnlyList<string>? packageNames) =>
+    /// <param name="packageNames">Null installs/upgrades everything pending; non-null scopes to just these.</param>
+    /// <param name="allowUnauthenticated">
+    /// Mirrors <see cref="AgentOptions.AllowUnauthenticatedPackages"/> —
+    /// when true, adds apt-get's own <c>--allow-unauthenticated</c> flag
+    /// so a repository with an invalid/missing signature doesn't fail the
+    /// whole transaction. Placed before the <c>--</c> marker like every
+    /// other flag here, never after it.
+    /// </param>
+    public static string[] BuildInstallArgs(IReadOnlyList<string>? packageNames, bool allowUnauthenticated = false) =>
         packageNames is null
             // null: upgrade everything pending, the original behavior.
-            ? ["-y", "-o", "Dpkg::Options::=--force-confold", "dist-upgrade"]
+            ? [
+                "-y",
+                .. allowUnauthenticated ? new[] { "--allow-unauthenticated" } : [],
+                "-o", "Dpkg::Options::=--force-confold", "dist-upgrade",
+              ]
             // Non-null: an admin selected only some packages to install —
             // "install --only-upgrade" restricts itself to packages that
             // already have a newer version available, the same semantics
             // dist-upgrade already has, just scoped to exactly these
             // names rather than a plain "install" that could otherwise
             // pull in something that isn't actually an upgrade.
-            : ["-y", "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", "--", .. packageNames];
+            : [
+                "-y",
+                .. allowUnauthenticated ? new[] { "--allow-unauthenticated" } : [],
+                "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", "--", .. packageNames,
+              ];
 
     public async Task<InstallResult> DownloadAndInstallAsync(IReadOnlyList<string>? packageNames, CancellationToken ct)
     {
-        var args = BuildInstallArgs(packageNames);
+        if (options.AllowUnauthenticatedPackages)
+        {
+            logger.LogWarning("AllowUnauthenticatedPackages is enabled; apt-get will accept packages from repositories with an invalid or missing signature.");
+        }
+
+        var args = BuildInstallArgs(packageNames, options.AllowUnauthenticatedPackages);
 
         var result = await ShellCommand.RunAsync(
             "apt-get",
@@ -126,11 +148,22 @@ public class AptUpdateSession(ILogger<AptUpdateSession> logger) : ILinuxUpdateSe
     /// concern here the way <see cref="BuildInstallArgs"/> has, since this
     /// never takes a caller-supplied package list at all.
     /// </summary>
-    public static string[] BuildDownloadOnlyArgs() => ["-y", "--download-only", "dist-upgrade"];
+    /// <param name="allowUnauthenticated">See <see cref="BuildInstallArgs"/>'s own parameter of the same name.</param>
+    public static string[] BuildDownloadOnlyArgs(bool allowUnauthenticated = false) =>
+        [
+            "-y",
+            .. allowUnauthenticated ? new[] { "--allow-unauthenticated" } : [],
+            "--download-only", "dist-upgrade",
+        ];
 
     public async Task<PreDownloadResult> DownloadOnlyAsync(CancellationToken ct)
     {
-        var args = BuildDownloadOnlyArgs();
+        if (options.AllowUnauthenticatedPackages)
+        {
+            logger.LogWarning("AllowUnauthenticatedPackages is enabled; apt-get will accept packages from repositories with an invalid or missing signature.");
+        }
+
+        var args = BuildDownloadOnlyArgs(options.AllowUnauthenticatedPackages);
         var result = await ShellCommand.RunAsync(
             "apt-get",
             args,

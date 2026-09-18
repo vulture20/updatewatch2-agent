@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.17] - 2026-09-18
+
+### Added
+
+- **A new `AllowUnauthenticatedPackages` config setting (Linux only), default `false`, at the user's explicit request** ("Es fehlt im Linux-deb-Agent eine Option um '--allow-unauthenticated' einzuschalten. Diese sollte in die Config-Datei mit aufgenommen werden und standardmäßig ausgeschaltet sein. Gibt es eine ähnliche Option für dnf/rpm?") — closes the gap the `hpn54l` "unauthenticated packages" incident (CLAUDE.md, the `AptUpdateSession.DownloadAndInstallAsync` note) left open: that incident's real fix was importing the repository's missing GPG key on the host itself, but there was no way for an admin who's deliberately decided to trust an unsigned/local repository (e.g. an air-gapped mirror that will never be signed) to tell this agent to stop refusing it. When enabled, `AptUpdateSession` passes apt-get's own `--allow-unauthenticated` on both `DownloadAndInstallAsync` and `DownloadOnlyAsync`; `DnfUpdateSession` passes the dnf/yum equivalent, `--nogpgcheck` (there's no dnf/yum flag named identically to apt's — `--nogpgcheck` is the closest match: like `--allow-unauthenticated`, it disables signature verification on the transaction rather than requiring a signature it can't check), on the same two calls. Both `BuildInstallArgs`/`BuildDownloadOnlyArgs` static methods take a new `allowUnauthenticated` parameter, placed before the existing `--` end-of-options marker like every other flag those methods build, with real unit test coverage confirming the flag's presence/absence and its position relative to `--`. Deliberately local-only, not something the server can push the way `LogLevel`/the update-check cadence are — a real security-relevant trust decision (bypassing package authentication) an admin has to opt into on a given host's own config file, not something that should be settable fleet-wide from the admin UI. A `LogWarning` fires on every install/pre-download call while enabled, so it shows up in the agent's own log the same way other security-relevant states in this codebase (e.g. `PinnedServerCertificateValidator`'s TOFU acceptance) already do. `installer/linux/postinst.sh`'s starter config and both READMEs' configuration reference tables were updated to match.
+
 ## [1.0.16] - 2026-09-17
 
 ### Added

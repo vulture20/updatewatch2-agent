@@ -44,10 +44,42 @@ public class DnfUpdateSessionTests
     }
 
     [Fact]
+    public void BuildInstallArgs_adds_nogpgcheck_when_allow_unauthenticated_is_enabled()
+    {
+        var args = DnfUpdateSession.BuildInstallArgs(packageNames: null, allowUnauthenticated: true);
+
+        Assert.Equal(["-y", "--nogpgcheck", "update"], args);
+    }
+
+    [Fact]
+    public void BuildInstallArgs_omits_nogpgcheck_by_default()
+    {
+        var args = DnfUpdateSession.BuildInstallArgs(packageNames: null);
+
+        Assert.DoesNotContain("--nogpgcheck", args);
+    }
+
+    [Fact]
+    public void BuildInstallArgs_places_nogpgcheck_before_the_end_of_options_marker()
+    {
+        var args = DnfUpdateSession.BuildInstallArgs(["httpd"], allowUnauthenticated: true);
+
+        Assert.Equal(["-y", "--nogpgcheck", "update", "--", "httpd"], args);
+    }
+
+    [Fact]
     public void BuildDownloadOnlyArgs_downloads_everything_pending_without_installing()
     {
         var args = DnfUpdateSession.BuildDownloadOnlyArgs();
 
         Assert.Equal(["-y", "update", "--downloadonly"], args);
+    }
+
+    [Fact]
+    public void BuildDownloadOnlyArgs_adds_nogpgcheck_when_enabled()
+    {
+        var args = DnfUpdateSession.BuildDownloadOnlyArgs(allowUnauthenticated: true);
+
+        Assert.Equal(["-y", "--nogpgcheck", "update", "--downloadonly"], args);
     }
 }
