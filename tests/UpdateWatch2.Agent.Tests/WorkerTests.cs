@@ -552,7 +552,7 @@ public class WorkerTests
             onRenewCertificate: () => new RenewCertificateResult(true, newPfxBase64));
 
         var worker = CreateHeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60 },
+            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60, HostnameOverride = "expiring-soon" },
             client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
 
         await RunUntilCancelledAsync(worker, cts.Token);
@@ -574,7 +574,7 @@ public class WorkerTests
         var client = new FakeServerClient(onSendAlive: () => cts.Cancel());
 
         var worker = CreateHeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60 },
+            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60, HostnameOverride = "plenty-of-time" },
             client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
 
         await RunUntilCancelledAsync(worker, cts.Token);
@@ -633,7 +633,7 @@ public class WorkerTests
 
         var wakeSignal = new FakeRegistrationWakeSignal();
         var worker = CreateHeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 0 },
+            new AgentOptions { AliveIntervalMinutes = 0, HostnameOverride = "rejected-host" },
             client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler, wakeSignal: wakeSignal);
 
         await RunUntilCancelledAsync(worker, cts.Token);
@@ -700,7 +700,7 @@ public class WorkerTests
         });
 
         var worker = CreateHeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 60 },
+            new AgentOptions { AliveIntervalMinutes = 60, HostnameOverride = "rejected-once-host" },
             client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
 
         await RunUntilCancelledAsync(worker, cts.Token);
@@ -747,12 +747,83 @@ public class WorkerTests
         });
 
         var worker = CreateHeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 0 },
+            new AgentOptions { AliveIntervalMinutes = 0, HostnameOverride = "intermittent-host" },
             client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
 
         await RunUntilCancelledAsync(worker, cts.Token);
 
         Assert.Empty(certificateStore.DeletedThumbprints);
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_skips_the_heartbeat_and_warns_when_HostnameOverride_disagrees_with_the_certified_hostname()
+    {
+        // A real, deliberate footgun (see AgentOptions.HostnameOverride's
+        // own doc comment): an admin changed the override after this
+        // agent's certificate was already issued for a different hostname.
+        // Attempting the heartbeat anyway would just get a 403 from the
+        // server's own hostname/certificate-identity check — this proves
+        // the mismatch is instead detected locally, before any call.
+        var cts = new CancellationTokenSource();
+        var certificate = CreateThrowawayCertificate("old-hostname", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var certificateStore = new FakeClientCertificateStore(existing: certificate);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [certificate] } };
+        var logger = new CapturingLogger<HeartbeatWorker>();
+
+        // CheckProtocolVersionAsync hits the server's anonymous /api/version
+        // endpoint regardless of the mismatch (see the class doc comment),
+        // so it's used here purely as a deterministic "one tick completed"
+        // signal — SendAliveAsync itself is never called in this scenario,
+        // so there's no other hook to cancel from.
+        var client = new FakeServerClient(onFetchVersion: () =>
+        {
+            cts.Cancel();
+            return new VersionResponse("1.0.0", ProtocolVersion.Current, "1.0.0");
+        });
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 60, HostnameOverride = "new-hostname" },
+            client, ReadyCertificateState(), logger, certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Equal(0, client.SendAliveCallCount);
+        Assert.Equal(0, client.RenewCertificateCallCount);
+        Assert.Contains(logger.Warnings, message => message.Contains("old-hostname") && message.Contains("new-hostname"));
+    }
+
+    [Fact]
+    public async Task HeartbeatWorker_does_not_self_heal_a_certificate_that_only_mismatches_because_of_HostnameOverride()
+    {
+        // The user's explicit choice: surface this, don't act on it
+        // automatically — self-heal must never fire just because
+        // HostnameOverride was changed locally, since that would silently
+        // drop a perfectly valid certificate and re-register under the new
+        // hostname, leaving the old Agent row orphaned server-side with no
+        // admin involvement at all.
+        var cts = new CancellationTokenSource();
+        var certificate = CreateThrowawayCertificate("old-hostname", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(700));
+        var certificateStore = new FakeClientCertificateStore(existing: certificate);
+        using var handler = new SocketsHttpHandler { SslOptions = { ClientCertificates = [certificate] } };
+
+        var tickCount = 0;
+        var client = new FakeServerClient(onFetchVersion: () =>
+        {
+            if (++tickCount >= 3)
+            {
+                cts.Cancel();
+            }
+            return new VersionResponse("1.0.0", ProtocolVersion.Current, "1.0.0");
+        });
+
+        var worker = CreateHeartbeatWorker(
+            new AgentOptions { AliveIntervalMinutes = 0, HostnameOverride = "new-hostname" },
+            client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
+
+        await RunUntilCancelledAsync(worker, cts.Token);
+
+        Assert.Empty(certificateStore.DeletedThumbprints);
+        Assert.Single(handler.SslOptions.ClientCertificates!);
     }
 
     [Fact]
@@ -1051,7 +1122,7 @@ public class WorkerTests
             onRenewCertificate: () => new RenewCertificateResult(true, newPfxBase64));
 
         var worker = CreateHeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60 },
+            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60, HostnameOverride = "far-from-expiry-but-rotated" },
             client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
 
         await RunUntilCancelledAsync(worker, cts.Token);
@@ -1072,7 +1143,7 @@ public class WorkerTests
         var client = new FakeServerClient(onSendAlive: () => cts.Cancel(), onCertificateRotationPending: _ => false);
 
         var worker = CreateHeartbeatWorker(
-            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60 },
+            new AgentOptions { AliveIntervalMinutes = 60, CertificateRenewalLeadTimeDays = 60, HostnameOverride = "plenty-of-time-no-rotation" },
             client, ReadyCertificateState(), certificateStore: certificateStore, sharedHttpHandler: handler);
 
         await RunUntilCancelledAsync(worker, cts.Token);

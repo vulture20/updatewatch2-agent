@@ -50,7 +50,12 @@ namespace UpdateWatch2.Agent;
 /// fresh install request, a fresh agent release, a CA rotation activating,
 /// or old update packages piling up that happens while this agent keeps
 /// running all get detected/handled too, not just a condition already
-/// present at this agent's own last startup.
+/// present at this agent's own last startup. Also, before any of the
+/// above, checks whether <see cref="AgentOptions.HostnameOverride"/> now
+/// disagrees with this agent's already-issued certificate — see
+/// <see cref="TryDetectHostnameOverrideMismatch"/> — and if so, skips the
+/// alive/renewal calls for that tick entirely rather than letting them
+/// fail against the server's own hostname/certificate-identity check.
 /// </summary>
 public class HeartbeatWorker(
     AgentOptions options,
@@ -93,22 +98,75 @@ public class HeartbeatWorker(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
+            // AgentOptions.HostnameOverride changing (or being set for the
+            // first time) on an agent that already holds a client
+            // certificate is a real, deliberate footgun the server enforces
+            // strictly: alive/renew/reboot-ack all reject a request whose
+            // URL hostname doesn't match the identity baked into the
+            // presented certificate's Subject at issuance. Detected LOCALLY
+            // here — comparing the loaded certificate's own Subject against
+            // the currently-effective hostname — rather than by reacting to
+            // the resulting 401/403, which is indistinguishable at the HTTP
+            // level from a genuine certificate rejection and would
+            // otherwise silently trip this worker's own self-heal (dropping
+            // the certificate and re-registering under the new hostname,
+            // leaving the OLD Agent row orphaned server-side). At the
+            // user's explicit request, this case is surfaced, not acted on
+            // automatically — see AgentOptions.HostnameOverride's own doc
+            // comment for the full reasoning and the manual recovery steps.
+            if (TryDetectHostnameOverrideMismatch(out var certifiedHostname, out var effectiveHostname))
             {
-                await HandleAliveAsync(stoppingToken);
+                // Logged every tick it persists, not just once — matching
+                // AllowUnauthenticatedPackages' own "warn on every relevant
+                // call while the condition holds" convention — this is an
+                // ongoing problem that needs an admin's own action to
+                // resolve, not something this loop will recover from on its
+                // own.
+                logger.LogWarning(
+                    "This agent's client certificate was issued for hostname '{CertifiedHostname}', but the " +
+                    "currently configured hostname is '{EffectiveHostname}' (AgentOptions.HostnameOverride) — every " +
+                    "authenticated server call would be rejected, so none are attempted this tick. To register " +
+                    "fresh under the new hostname: delete the '{CertifiedHostname}' entry on the server and remove " +
+                    "this agent's local client certificate.",
+                    certifiedHostname, effectiveHostname, certifiedHostname);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            else
             {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to send alive heartbeat");
+                try
+                {
+                    await HandleAliveAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to send alive heartbeat");
+                }
+
+                // Deliberately its own try/catch too — a failed renewal
+                // attempt just gets retried next tick (RegistrationWorker's
+                // own maintenance loop is the fallback if this agent's
+                // certificate is ever lost outright, not this worker's job).
+                try
+                {
+                    await CheckCertificateRenewalAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to check/renew this agent's client certificate");
+                }
             }
 
             // Deliberately its own try/catch, independent of the alive
-            // call above — a transient failure to fetch the version must
-            // not affect the heartbeat itself.
+            // call above, and NOT gated by the hostname-mismatch check —
+            // this hits the server's anonymous /api/version endpoint, so a
+            // mismatched identity doesn't affect it either way.
             try
             {
                 await CheckProtocolVersionAsync(stoppingToken);
@@ -120,23 +178,6 @@ public class HeartbeatWorker(
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Failed to check the server's protocol version");
-            }
-
-            // Deliberately its own try/catch too — a failed renewal attempt
-            // just gets retried next tick (RegistrationWorker's own
-            // maintenance loop is the fallback if this agent's certificate
-            // is ever lost outright, not this worker's job).
-            try
-            {
-                await CheckCertificateRenewalAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to check/renew this agent's client certificate");
             }
 
             // Also its own try/catch — this is purely additive trust
@@ -237,6 +278,25 @@ public class HeartbeatWorker(
 
         SelfHealRejectedCertificate();
         _consecutiveCertificateRejections = 0;
+    }
+
+    /// <summary>
+    /// True when this agent already holds a client certificate, but that
+    /// certificate's own Subject (its Common Name, set to the hostname it
+    /// was issued for) no longer matches <see cref="AgentOptions.ResolveHostname"/>'s
+    /// current result — i.e. <see cref="AgentOptions.HostnameOverride"/> was
+    /// set or changed after this certificate was already issued. See
+    /// <see cref="AgentOptions.HostnameOverride"/>'s own doc comment for why
+    /// this is detected locally rather than by reacting to the server's
+    /// resulting 401/403. False (nothing to detect) when there's no local
+    /// certificate at all — that's RegistrationWorker's own, unrelated
+    /// lost-certificate recovery case.
+    /// </summary>
+    private bool TryDetectHostnameOverrideMismatch(out string? certifiedHostname, out string effectiveHostname)
+    {
+        effectiveHostname = options.ResolveHostname();
+        certifiedHostname = certificateStore.Load()?.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
+        return certifiedHostname is not null && !string.Equals(certifiedHostname, effectiveHostname, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -37,6 +37,7 @@ public class LinuxFileConfigStoreTests : IDisposable
             RegistrationToken = "abc123",
             ClientCertificateThumbprint = "deadbeef",
             SelfUpdateStagingRetentionDays = 30,
+            HostnameOverride = "renamed-host",
         };
 
         store.Save(original);
@@ -52,6 +53,7 @@ public class LinuxFileConfigStoreTests : IDisposable
         Assert.Equal(original.RegistrationToken, loaded.RegistrationToken);
         Assert.Equal(original.ClientCertificateThumbprint, loaded.ClientCertificateThumbprint);
         Assert.Equal(original.SelfUpdateStagingRetentionDays, loaded.SelfUpdateStagingRetentionDays);
+        Assert.Equal(original.HostnameOverride, loaded.HostnameOverride);
     }
 
     [Fact]
@@ -65,6 +67,18 @@ public class LinuxFileConfigStoreTests : IDisposable
 
         Assert.Null(loaded.RegistrationToken);
         Assert.Null(loaded.ClientCertificateThumbprint);
+    }
+
+    [Fact]
+    public void Save_then_load_round_trips_a_null_HostnameOverride_as_null()
+    {
+        var store = new LinuxFileConfigStore(_path);
+        var original = new AgentOptions { HostnameOverride = null };
+
+        store.Save(original);
+        var loaded = store.Load();
+
+        Assert.Null(loaded.HostnameOverride);
     }
 
     [Fact]

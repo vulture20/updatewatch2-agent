@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using UpdateWatch2.Agent.Communication;
+using UpdateWatch2.Agent.Configuration;
 
 namespace UpdateWatch2.Agent.Tests.Communication;
 
@@ -30,7 +31,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { approved = false, registrationToken = "tok", certificate = (string?)null, protocolVersion = "0.6.0" }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         await client.RegisterAsync(registrationToken: null);
 
@@ -38,6 +39,73 @@ public class ServerClientTests
         using var doc = JsonDocument.Parse(handler.LastRequestBody!);
         var ip = doc.RootElement.GetProperty("ipAddress").GetString();
         Assert.False(string.IsNullOrEmpty(ip));
+    }
+
+    [Fact]
+    public async Task RegisterAsync_uses_HostnameOverride_in_the_route_when_set()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { approved = false, registrationToken = "tok", certificate = (string?)null, protocolVersion = "0.6.0" }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, new AgentOptions { HostnameOverride = "renamed-host" }, NullLogger<ServerClient>.Instance);
+
+        await client.RegisterAsync(registrationToken: null);
+
+        Assert.Contains("/api/agents/renamed-host/register", handler.LastRequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_uses_HostnameOverride_in_the_route_when_set()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, new AgentOptions { HostnameOverride = "renamed-host" }, NullLogger<ServerClient>.Instance);
+
+        await client.SendAliveAsync();
+
+        Assert.Contains("/api/agents/renamed-host/alive", handler.LastRequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_falls_back_to_the_OS_hostname_when_HostnameOverride_is_blank()
+    {
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, new AgentOptions { HostnameOverride = "  " }, NullLogger<ServerClient>.Instance);
+
+        await client.SendAliveAsync();
+
+        Assert.Contains($"/api/agents/{Environment.MachineName}/alive", handler.LastRequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task SendAliveAsync_never_lets_HostnameOverride_affect_the_separately_reported_DnsName()
+    {
+        // AgentOptions.HostnameOverride's own doc comment: overriding the
+        // identity/routing hostname must not also change what this agent
+        // self-reports as its DnsName metadata — a genuinely different,
+        // purely informational field.
+        var handler = new CapturingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { installRequested = false }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
+        var client = new ServerClient(httpClient, new AgentOptions { HostnameOverride = "renamed-host" }, NullLogger<ServerClient>.Instance);
+
+        await client.SendAliveAsync();
+
+        Assert.NotNull(handler.LastRequestBody);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        var dnsName = doc.RootElement.GetProperty("dnsName").GetString();
+        Assert.DoesNotContain("renamed-host", dnsName);
     }
 
     [Fact]
@@ -51,7 +119,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         await client.SendAliveAsync();
 
@@ -71,7 +139,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         await client.SendAliveAsync(rebootRequired: true);
 
@@ -88,7 +156,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         await client.SendAliveAsync();
 
@@ -105,7 +173,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         await client.SendAliveAsync(
             actualLogLevel: "DEBUG", actualUpdateCheckIntervalMinutes: 120, actualUpdateCheckJitterSeconds: 45,
@@ -134,7 +202,7 @@ public class ServerClientTests
             }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -152,7 +220,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -187,7 +255,7 @@ public class ServerClientTests
             }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -210,7 +278,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -227,7 +295,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false, certificateRotationPending = true }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -244,7 +312,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -259,7 +327,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false, preDownloadWindowsUpdatesEnabled = true }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -276,7 +344,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -291,7 +359,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false, preDownloadLinuxUpdatesEnabled = true }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -306,7 +374,7 @@ public class ServerClientTests
             Content = JsonContent.Create(new { installRequested = false }),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -321,7 +389,7 @@ public class ServerClientTests
             Content = new StringContent("fake-binary-content"),
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
         var destinationPath = Path.Combine(Path.GetTempPath(), $"uw2-agent-download-test-{Guid.NewGuid()}");
 
         try
@@ -356,7 +424,7 @@ public class ServerClientTests
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { installRequested = false }) };
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -374,7 +442,7 @@ public class ServerClientTests
             throw new HttpRequestException("Connection reset by peer", null, statusCode: null);
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         await Assert.ThrowsAsync<HttpRequestException>(() => client.SendAliveAsync());
 
@@ -400,7 +468,7 @@ public class ServerClientTests
             return new HttpResponseMessage(HttpStatusCode.InternalServerError);
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:1") };
-        var client = new ServerClient(httpClient, NullLogger<ServerClient>.Instance);
+        var client = new ServerClient(httpClient, new AgentOptions(), NullLogger<ServerClient>.Instance);
 
         var result = await client.SendAliveAsync();
 
@@ -412,8 +480,11 @@ public class ServerClientTests
     {
         public string? LastRequestBody { get; private set; }
 
+        public Uri? LastRequestUri { get; private set; }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            LastRequestUri = request.RequestUri;
             LastRequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             return respond(request);
         }

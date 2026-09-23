@@ -4,9 +4,10 @@ namespace UpdateWatch2.Agent.Configuration;
 /// Local agent configuration — server address/port and the update-check /
 /// alive-heartbeat cadence. Stored in the Windows registry (set by the NSIS
 /// installer) or, on Linux, an equivalent config file; see
-/// <see cref="IAgentConfigStore"/>. The agent's identity (hostname) is not
-/// part of this — it's read from the OS at runtime, per CLAUDE.md
-/// ("Agents are identified by hostname").
+/// <see cref="IAgentConfigStore"/>. The agent's identity (hostname) is read
+/// from the OS at runtime by default, per CLAUDE.md ("Agents are identified
+/// by hostname") — <see cref="HostnameOverride"/> is the one deliberate
+/// exception to that; see <see cref="ResolveHostname"/>.
 /// </summary>
 public class AgentOptions
 {
@@ -129,4 +130,56 @@ public class AgentOptions
     /// what this agent last tried to install.
     /// </summary>
     public int SelfUpdateStagingRetentionDays { get; set; } = 90;
+
+    /// <summary>
+    /// Overrides the hostname this agent reports to — and is thereafter
+    /// identified by on — the server, in place of the OS-reported
+    /// <see cref="Environment.MachineName"/>, at the user's explicit
+    /// request ("Der an den Server gemeldete und damit auch genutzte
+    /// Hostname des Agents sollte über einen Parameter... überschreibbar
+    /// sein."). Null or blank means "no override" — see
+    /// <see cref="ResolveHostname"/>, the only place this is read.
+    ///
+    /// Local-only, never pushed by the server (same discipline as
+    /// <see cref="AllowUnauthenticatedPackages"/>) — the server has no way
+    /// to know what a machine's real/desired name should be, only what an
+    /// admin tells this specific agent by hand.
+    ///
+    /// Deliberately does NOT affect <see cref="Communication.ServerClient"/>'s
+    /// separately self-reported <c>DnsName</c> metadata field (resolved via
+    /// <c>Dns.GetHostEntry</c>, purely informational, shown in the admin
+    /// UI) — this only overrides the identity/routing hostname (CLAUDE.md
+    /// "Agents are identified by hostname"), a genuinely different concept
+    /// from "what does this agent report about itself."
+    ///
+    /// Changing this on an agent that already holds a client certificate is
+    /// a real, deliberate footgun, not something silently handled: the
+    /// server's <c>alive</c>/<c>renew</c>/<c>reboot-ack</c> endpoints all
+    /// reject a request whose URL hostname doesn't match the identity baked
+    /// into the presented certificate's Subject (<c>CN=&lt;hostname&gt;</c>
+    /// at issuance). <see cref="HeartbeatWorker"/> detects this LOCALLY —
+    /// comparing the loaded certificate's own Subject against the
+    /// currently-effective hostname, before ever attempting an
+    /// authenticated call — logs a clear warning every tick it persists,
+    /// and skips the heartbeat/renewal for that tick, deliberately WITHOUT
+    /// triggering this codebase's own self-heal mechanism (which would
+    /// otherwise silently drop the certificate and re-register under the
+    /// new hostname, leaving the OLD Agent row orphaned on the server, at
+    /// the user's explicit request that this be surfaced rather than acted
+    /// on automatically). An admin who wants to actually rename an
+    /// already-onboarded agent must delete its old server-side entry and
+    /// clear this agent's local client certificate by hand, which lets
+    /// <see cref="UpdateWatch2.Agent.RegistrationWorker"/>'s existing
+    /// lost-certificate recovery path register it fresh under the new name.
+    /// </summary>
+    public string? HostnameOverride { get; set; }
+
+    /// <summary>
+    /// The hostname this agent actually reports to, and is identified by
+    /// on, the server — <see cref="HostnameOverride"/> when set to a
+    /// non-blank value, otherwise the OS-reported
+    /// <see cref="Environment.MachineName"/>. The one place
+    /// <see cref="HostnameOverride"/> is read.
+    /// </summary>
+    public string ResolveHostname() => string.IsNullOrWhiteSpace(HostnameOverride) ? Environment.MachineName : HostnameOverride;
 }

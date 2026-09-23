@@ -30,7 +30,8 @@ if [ ! -e "$CONFIG_FILE" ]; then
   "ClientCertificateThumbprint": null,
   "CertificateRenewalLeadTimeDays": 60,
   "CertificateMaintenanceIntervalSeconds": 900,
-  "AllowUnauthenticatedPackages": false
+  "AllowUnauthenticatedPackages": false,
+  "HostnameOverride": null
 }
 EOF
     # Matches the restriction LinuxFileConfigStore.Save() itself applies —

@@ -330,7 +330,7 @@ builder.Services.AddSingleton<Func<IServerClient>>(sp => () =>
         bootstrapHttpClient.BaseAddress = new Uri($"https://{opts.ServerAddress}:{opts.ServerPort}/");
     }
 
-    return new ServerClient(bootstrapHttpClient, sp.GetRequiredService<ILogger<ServerClient>>());
+    return new ServerClient(bootstrapHttpClient, opts, sp.GetRequiredService<ILogger<ServerClient>>());
 });
 
 builder.Services.AddHttpClient<IServerClient, ServerClient>((sp, client) =>
