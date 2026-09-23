@@ -11,6 +11,17 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.24] - 2026-09-23
+
+### Fixed
+
+- **README/README.de audited for accuracy against the current code, at the user's explicit request (following the same accuracy audit already done for the server repo's README).** No code changed — all of the following are documentation-only fixes:
+  - **The Project status section's short summary and detailed paragraph both overstated self-update as "tested end to end against a real running server."** Only the *negotiation* half (the server offering a release, this agent downloading it, verifying its SHA-256) has actually been run live — *applying* one (running the installer, or `dpkg -i`/`rpm -U`) has not, on either platform. Reworded both to say so precisely.
+  - **The same two sections were missing several still-open "not live-verified" gaps** documented in CLAUDE.md but never surfaced here: `shutdown.exe`-based and `systemd`-based remote reboot scheduling on both platforms, the Windows self-update apply step, and Windows Event Log output. Replaced the single dense sentence in "Project status" with a complete, grouped list (Windows / Linux / Packaging) covering every currently-open gap.
+  - **The "Real update detection & installation" feature bullet only mentioned Windows' pre-download-before-install toggle** — Linux has had an independent one (`ILinuxUpdateSession.DownloadOnlyAsync`) since agent v1.0.16, never mentioned here at all. Added.
+  - **The "Configuration reference" table was missing three real, admin-tunable `AgentOptions` fields**: `RegistrationRetryIntervalSeconds`, `CertificateMaintenanceIntervalSeconds`, and `SelfUpdateStagingRetentionDays` — all exist and are read from the config file/registry today, just never documented. Added rows for all three.
+  - The Windows install command examples used a stale placeholder version (`0.12.0`/`0.15.0`) — updated to track the current release. The "Repository layout" section was missing the `Reboot/` folder (added by the remote-reboot feature) — added.
+
 ## [1.0.23] - 2026-09-23
 
 ### Added

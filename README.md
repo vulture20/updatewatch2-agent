@@ -12,7 +12,7 @@
 
 UpdateWatch2 Agent is the managed-endpoint half of **UpdateWatch2**: a .NET Worker Service, targeting both Windows and Linux from one codebase, that checks for OS updates, reports them (and whether a reboot is required) to the server, and installs them only on remote trigger — never rebooting on its own.
 
-> ✅ **Stable.** The certificate-based onboarding, heartbeat, and self-update mechanics are implemented and tested end to end against a real running server. The real Windows Update API (WUApiLib) integration, the Linux `dnf`/`yum` update path, and the Windows installer's install/uninstall behavior have **not** been verified against a real target host yet. See [Project status](#-project-status) below.
+> ✅ **Stable.** The certificate-based onboarding and heartbeat are implemented and tested end to end against a real running server; self-update's negotiation half (offer, download, SHA-256 verification) is too, but actually applying an update is not. The real Windows Update API (WUApiLib) integration, the Linux `dnf`/`yum` update path, the Windows installer's install/uninstall behavior, and remote reboot on both platforms have **not** been verified against a real target host yet. See [Project status](#-project-status) below.
 
 Companion repository: [updatewatch2-server](https://github.com/vulture20/updatewatch2-server) — the management server this agent reports to.
 
@@ -30,7 +30,7 @@ Companion repository: [updatewatch2-server](https://github.com/vulture20/updatew
 
 ### 📦 Real update detection & installation
 - **Windows:** the real Windows Update API (WUApiLib) via late-bound COM — search, download, and install, deliberately excluding driver updates by default, the same conservative default Windows Update's own UI uses. Can also proactively download pending updates ahead of an actual install trigger, gated by an admin-configurable, fleet-wide toggle (Settings → General on the server) — so an install applies from local cache instead of downloading at trigger time.
-- **Linux:** `apt`/`dpkg` on Debian-derived distros, `dnf`/`yum` on RPM-based ones, auto-detected at startup; falls back to a no-op checker if neither is present.
+- **Linux:** `apt`/`dpkg` on Debian-derived distros, `dnf`/`yum` on RPM-based ones, auto-detected at startup; falls back to a no-op checker if neither is present. Same independent pre-download toggle as Windows, above (Settings → General on the server has separate checkboxes for each platform).
 - Installation never triggers a reboot itself — "reboot required" is always a separate, independently reported signal. A full machine reboot (not just this agent's own service) can still be triggered remotely by an admin, delivered and acknowledged the same way as a triggered install.
 
 ### 🔄 Agent self-update
@@ -41,7 +41,13 @@ Companion repository: [updatewatch2-server](https://github.com/vulture20/updatew
 
 ## ✅ Project status
 
-UpdateWatch2 was built with **vibe coding**: implemented and iterated on with [Claude Code](https://claude.com/claude-code) (Anthropic) in conversation, rather than hand-written line by line, driven by a human-authored architecture brief. The certificate lifecycle, registration/heartbeat/self-update protocol, and the Linux `apt` update-detection path have been run live against a real server and a real package cache, and are covered by an automated (xUnit) test suite. Some pieces are explicitly **not yet live-verified against a real target host**, called out as such in code comments: the Windows Update API (WUApiLib COM) integration, the Linux `dnf`/`yum` path (this project's own dev environment is Debian-based), the NSIS Windows installer's install/uninstall actually run through `sc.exe`/a package manager, and the arm64 Windows installer/agent (no Windows-on-ARM host has ever been available to this project — the `win-arm64` publish itself has been confirmed to produce a genuine native ARM64 executable, just never run on a real device). The arm64 `.deb`/`.rpm` packages are a partial exception: each release's CI pipeline actually starts the published `linux-arm64` binary on a native (not emulated) arm64 runner and confirms it runs its real startup/registration code before packaging it, so that much is live-verified on real arm64 hardware — install/upgrade through `dpkg`/`rpm` itself on an arm64 host is not, same as the existing x86_64 `.rpm` gap. Treat the pieces called out above as well-researched but not yet confirmed on a real target host — everything else has been live-verified end to end.
+UpdateWatch2 was built with **vibe coding**: implemented and iterated on with [Claude Code](https://claude.com/claude-code) (Anthropic) in conversation, rather than hand-written line by line, driven by a human-authored architecture brief. The certificate lifecycle (registration, approval, renewal, re-issuance, CA root rotation) and the alive heartbeat have been run live against a real server, and the Linux `apt` update-*detection* path has been run live against a real package cache; all are covered by an automated (xUnit) test suite. Agent self-update's *negotiation* half (the server offering a release, this agent downloading it and verifying its SHA-256) has been run live too — actually *applying* one (running the installer/`dpkg`/`rpm`) has not, on either platform; see below. A number of pieces are explicitly **not yet live-verified against a real target host**, called out as such in code comments:
+
+- **Windows** (no real Windows host has ever been available to this project): the Windows Update API (WUApiLib COM) integration; the NSIS installer's install/uninstall actually run through `sc.exe`; the self-update apply step (silently re-running the installer); `shutdown.exe`-based remote reboot scheduling; Windows Event Log output; Windows-on-ARM (`win-arm64`) entirely — the publish itself has been confirmed to produce a genuine native ARM64 executable, just never run on a real device.
+- **Linux**: the `dnf`/`yum` update path (this project's own dev environment is Debian-based, only `apt` was verified); the self-update apply step (`dpkg -i`/`rpm -U`) completing end to end on a real host — the cgroup-escape mechanism it depends on was confirmed live, but a full self-update cycle after that fix was not re-verified; `systemd`-based remote reboot scheduling (deliberately never run for real — would reboot the shared sandbox this project's own tooling depends on).
+- **Packaging**: `.rpm` install/upgrade on x86_64 (structural inspection only, never run through a real package manager). arm64 `.deb`/`.rpm` are a partial exception: each release's CI pipeline actually starts the published `linux-arm64` binary on a native (not emulated) arm64 runner and confirms it runs its real startup/registration code before packaging, so that much is live-verified on real arm64 hardware — install/upgrade through `dpkg`/`rpm` itself on an arm64 host is not, same as the x86_64 gap.
+
+Treat the pieces called out above as well-researched but not yet confirmed on a real target host — everything else has been live-verified end to end.
 
 ## 🚀 Installation & configuration
 
@@ -53,10 +59,10 @@ Every release publishes two installers — `UpdateWatch2Agent-Setup-<version>-x6
 
 ```powershell
 # Interactive install — prompts for the server address/port
-UpdateWatch2Agent-Setup-0.12.0-x64.exe
+UpdateWatch2Agent-Setup-1.0.24-x64.exe
 
 # Unattended install (e.g. via a deployment tool)
-UpdateWatch2Agent-Setup-0.12.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8796
+UpdateWatch2Agent-Setup-1.0.24-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8796
 ```
 
 This installs and starts the `UpdateWatch2 Agent` Windows service, and writes the server address/port to `HKLM\SOFTWARE\UpdateWatch2\Agent` (ACL-restricted to Administrators/SYSTEM). Re-running the installer on top of an existing install performs an upgrade in place. The uninstaller removes the service, install directory, registry key, and (best-effort) this agent's own client certificate from the machine store.
@@ -66,7 +72,7 @@ This installs and starts the `UpdateWatch2 Agent` Windows service, and writes th
 By default, a freshly installed agent trusts whatever CA certificate the server hands it on its very first contact ("trust-on-first-use", TOFU) — a network attacker present at *exactly* that moment could intercept it and hand the agent a malicious CA instead. To close that window, download the server's current CA root certificate ahead of time — from the admin UI's Certificates tab ("Download CA root certificate"), or `GET /api/admin/certificate-authority/download` directly, both session-authenticated — and pass it to the installer via `/CACERT=`:
 
 ```powershell
-UpdateWatch2Agent-Setup-0.15.0-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8796 /CACERT=C:\temp\updatewatch2-ca.crt
+UpdateWatch2Agent-Setup-1.0.24-x64.exe /S /SERVERADDRESS=updatewatch2.example.com /SERVERPORT=8796 /CACERT=C:\temp\updatewatch2-ca.crt
 ```
 
 This is optional and fully backward compatible — omit `/CACERT=` and the original TOFU behavior is unchanged.
@@ -110,9 +116,12 @@ Every key below is used verbatim in both places: as the registry *value name* un
 | Update-check interval | `UpdateCheckIntervalMinutes` | `240` | Base interval between OS-update checks, in minutes. |
 | Update-check jitter | `UpdateCheckJitterSeconds` | `300` | Random jitter (0..N seconds) added on top, so many agents don't hit the server at once. |
 | Heartbeat interval | `AliveIntervalMinutes` | `5` | How often this agent sends an alive message. |
+| Registration poll interval | `RegistrationRetryIntervalSeconds` | `30` | How often this agent polls the server while waiting for admin approval/certificate issuance during onboarding — separate from the (much longer) heartbeat interval, since a human is typically watching during this phase. |
 | Log level | `LogLevel` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
 | Certificate renewal lead time | `CertificateRenewalLeadTimeDays` | `60` | Days before its certificate's expiry that this agent proactively requests a fresh one. |
+| Certificate maintenance interval | `CertificateMaintenanceIntervalSeconds` | `900` | Upper bound on how often this agent re-checks its local certificate once one is already attached (e.g. noticing a fresh re-issuance token). Only an upper bound — a rejected certificate wakes this check immediately rather than waiting it out. |
 | Allow unauthenticated packages | `AllowUnauthenticatedPackages` | `false` | **Linux only.** Passes apt-get's `--allow-unauthenticated` / dnf's and yum's `--nogpgcheck` on install and pre-download, so a repository with an invalid or missing signature doesn't fail the whole transaction. Security-relevant — only enable this if you've deliberately decided to trust an unsigned/local repository; the usual fix for an "unauthenticated packages" error is importing that repository's GPG key, not this. Local-only, never pushed by the server. |
+| Self-update staging retention | `SelfUpdateStagingRetentionDays` | `90` | How long a downloaded self-update package is kept in local staging before being cleaned up. The single most-recently-downloaded package is always kept regardless of this value. |
 
 `RegistrationToken` and `ClientCertificateThumbprint` are also stored here but are managed automatically by the agent itself — never set these by hand except when placing a fresh token an admin gave you for re-issuance (see the server's admin UI). No service restart is required after changing any of these; the agent picks config changes up on its own maintenance/heartbeat cadence.
 
@@ -126,7 +135,7 @@ Every key below is used verbatim in both places: as the registry *value name* un
 ## 📁 Repository layout
 
 ```
-src/UpdateWatch2.Agent/    Certificates/, Communication/, Configuration/, SelfUpdate/, UpdateCheck/ (Windows/, Linux/), RegistrationWorker.cs, HeartbeatWorker.cs, UpdateCheckWorker.cs
+src/UpdateWatch2.Agent/    Certificates/, Communication/, Configuration/, Reboot/, SelfUpdate/, UpdateCheck/ (Windows/, Linux/), RegistrationWorker.cs, HeartbeatWorker.cs, UpdateCheckWorker.cs
 tests/                     xUnit — hand-written fakes, no mocking library
 installer/nsis/            setup.nsi — the Windows installer
 installer/linux/           systemd unit + postinst/prerm/postrm scripts, packaged via fpm
