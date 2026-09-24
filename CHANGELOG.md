@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.32] - 2026-09-24
+
+### Fixed
+
+- **Diagnosis only, no fix: real `journalctl` evidence gathered for `updatewatch2-agent#24` (Linux self-update repeating "Applied" forever), at the user's explicit follow-up request.** Discovered mid-investigation: this project's own interactive session shell runs directly on `hpn54l`, the real production host — a privileged-Docker-container approach (bind-mounting the host's own real `/sys/fs/cgroup`) was correctly abandoned in favor of an isolated QEMU VM (real KVM acceleration, its own separate kernel/cgroups, zero host sharing) after the user asked whether that would be safer. Inside that VM: a real end-to-end self-update (correctly architecture-matched, `systemd-run --scope`-wrapped `dpkg -i`) completed flawlessly, confirming the mechanism itself is sound under healthy conditions. Separately, deliberately running the identical `systemd-run --scope -- dpkg -i` invocation against a mismatched-architecture package reproduced the reported symptom's exact mechanism: `dpkg` failed immediately and cleanly, but the wrapping scope still reported success, and the pre-existing agent/service were left completely untouched — the same unchanged process would see the identical offer again on its next heartbeat, forever. `LinuxPackageApplier`'s doc comment updated to reflect this. `updatewatch2-agent#24` stays open with this evidence as a comment; the two fixes it proposes remain unimplemented per this round's explicit scope.
+
 ## [1.0.31] - 2026-09-24
 
 ### Fixed

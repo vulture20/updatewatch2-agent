@@ -58,14 +58,27 @@ namespace UpdateWatch2.Agent.SelfUpdate.Linux;
 ///
 /// <para>
 /// Confirmed live for the actual deadlock this fixes (the "donthack"
-/// incident above); the fixed detached-scope path itself is <b>NOT YET
-/// live-verified</b> — same honesty caveat this project's other
-/// Linux-install code already carries (this dev sandbox has no systemd —
-/// see CLAUDE.md's note on <c>AptUpdateSession</c>), and installing a
-/// package here would mutate the sandbox's real system. Re-verify a real
-/// self-update cycle (offer -> download -> detached install -> new
-/// version reporting on the next heartbeat) on a real systemd host before
-/// trusting this further.
+/// incident above); the fixed detached-scope path itself has since been
+/// confirmed live too (agent v1.0.32, investigating `updatewatch2-agent#24`
+/// — never possible to test directly in this project's own dev sandbox,
+/// which has no systemd; instead run inside an isolated QEMU VM to avoid
+/// touching this project's real shared host). A genuine, correctly
+/// architecture-matched self-update completed flawlessly end to end — real
+/// `journalctl` confirmed the scope's `dpkg` unpack/configure succeeding,
+/// the service coming back up on the new binary, and the server-reported
+/// `AgentVersion` advancing on the very next heartbeat. Separately,
+/// deliberately running `systemd-run --scope -- dpkg -i` on an
+/// architecture-*mismatched* package reproduced this class's real blind
+/// spot exactly: `dpkg` failed immediately and cleanly, but the wrapping
+/// scope itself still logged "Deactivated successfully" — this method has
+/// no way to tell the difference, so a genuinely failed install leaves the
+/// old agent process running unchanged, which then retries the identical
+/// offer forever. See `updatewatch2-agent#24` for the full write-up; no
+/// fix implemented yet (diagnosis only) — the two remaining exposure
+/// points are any other real package-manager failure (a held lock, disk
+/// space, an unauthenticated repository, ...), and a pre-v1.0.20 agent
+/// that could still be offered a mismatched-architecture asset in the
+/// first place.
 /// </para>
 /// </summary>
 [SupportedOSPlatform("linux")]
