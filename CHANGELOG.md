@@ -11,6 +11,16 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.25] - 2026-09-24
+
+### Fixed
+
+- **README/README.de's Project status sections were out of date again, reported directly by the user, following on from the previous audit (v1.0.24).** No code changed — documentation-only:
+  - The real Windows Update API (WUApiLib) integration and the NSIS installer's install/uninstall behavior (`sc.exe create`/uninstall) have since been confirmed against a real Windows host, including a real selective (per-KB) install — closing `updatewatch2-agent#13`. Both were previously listed as "not yet live-verified"; reworded throughout to state they're confirmed, and the "no real Windows host has ever been available" framing was removed since it's no longer accurate for these two pieces specifically.
+  - Windows-on-ARM (`win-arm64`) and the arm64 Linux install-through-a-package-manager path remain explicitly unconfirmed — no ARM64 device (Windows or Linux) has been available to try either.
+  - The Linux self-update apply step's own caveat now links directly to `updatewatch2-agent#24` (a real production report suggesting it may still fail silently) rather than only describing the gap in prose — that issue was investigated and deliberately left open, since the code it describes hasn't changed since it was filed.
+  - CLAUDE.md updated to match throughout (the "Real Windows Update API integration", ".rpm install/upgrade and NSIS's Windows install/uninstall path", "Windows-on-ARM", and "Selective update install" notes).
+
 ## [1.0.24] - 2026-09-23
 
 ### Fixed
