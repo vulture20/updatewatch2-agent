@@ -11,6 +11,15 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.26] - 2026-09-24
+
+### Fixed
+
+- **README/README.de/CLAUDE.md still listed three Windows pieces as "not yet live-verified" that the user has since confirmed against a real Windows host: remote reboot scheduling (`shutdown.exe`), Windows Event Log output, and the self-update apply step (`WindowsInstallerApplier` silently re-running the NSIS installer, including the service delete/recreate sequence).** No functional code changed — documentation-only, plus one doc-comment update:
+  - README/README.de's badge and Project status section reworded to state all three are confirmed on Windows; only the Linux counterparts of each (self-update apply, remote reboot) remain open, alongside the pre-existing `dnf`/`yum` and arm64 gaps.
+  - CLAUDE.md updated at every corresponding "not live-verified" note (Remote reboot, the Event Log source-split/DEBUG-visibility fixes, the Agent auto-update bullet, and the "Windows hit the analogous problem" service delete/recreate fix).
+  - `WindowsInstallerApplier`'s own doc comment — the one place in the codebase that explicitly said "NOT live-verified — no Windows host was available when this was written" — updated to state the SCM child-process-survival assumption it depends on is now confirmed.
+
 ## [1.0.25] - 2026-09-24
 
 ### Fixed

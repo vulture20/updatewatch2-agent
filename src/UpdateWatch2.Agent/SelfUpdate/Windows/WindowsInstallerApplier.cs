@@ -16,16 +16,15 @@ namespace UpdateWatch2.Agent.SelfUpdate.Windows;
 /// current server configuration across the upgrade.
 ///
 /// <para>
-/// <b>NOT live-verified</b> — same honesty caveat as <c>WuaUpdateSession</c>
-/// and every other Windows-only class in this codebase (no Windows host
-/// was available when this was written). In particular, this assumes the
-/// Windows Service Control Manager does not kill a service's already-
-/// launched child processes when the service itself stops — true for an
-/// ordinary service that isn't placed in a kill-on-job-close Job Object,
-/// which is the SCM's default, but unconfirmed against a real installer
-/// run. Re-verify this specific assumption (does the installer process
-/// launched here actually survive long enough to stop/replace/restart the
-/// service?) on a real Windows host before relying on it in production.
+/// <b>Live-verified</b> against a real Windows host: the assumption this
+/// class depends on — that the Windows Service Control Manager does not
+/// kill a service's already-launched child processes when the service
+/// itself stops (true for an ordinary service that isn't placed in a
+/// kill-on-job-close Job Object, the SCM's default) — has been confirmed
+/// for real. The launched installer process does survive long enough to
+/// stop/replace/restart the service, including the delete/recreate
+/// sequence <c>setup.nsi</c>'s own upgrade path performs (see CLAUDE.md's
+/// "Windows hit the analogous problem" note, agent v1.0.5).
 /// </para>
 /// </summary>
 [SupportedOSPlatform("windows")]
