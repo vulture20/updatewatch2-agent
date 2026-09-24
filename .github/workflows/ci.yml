@@ -46,26 +46,44 @@ jobs:
   # Real dnf/yum coverage for DnfUpdateSession/DnfOutputParser
   # (updatewatch2-agent#8's own long-standing "not live-verified against a
   # real dnf/yum host" gap) — deliberately its own job, not folded into
-  # `test` above, so standing up a whole second .NET SDK inside a Fedora
+  # `test` above, so standing up a whole second .NET SDK inside an RPM
   # container never slows down the fast path every ordinary push/PR
   # already takes. continue-on-error: true so a flaky container start (or
   # an actual regression here) never blocks the fast path — the same
   # "don't let the newer, less-certain piece block the core pipeline"
   # precedent this repo's own release.yml already established for its
   # optional linux-packages job, and updatewatch2-server's docker-publish.yml
-  # established for its own ldap-integration-test job.
+  # established for its own ldap-integration-test job. A matrix over both
+  # a dnf5 host (Fedora) and a classic-dnf4 RHEL-family host (Rocky
+  # Linux), mirroring release.yml's own linux-packages matrix job shape —
+  # both flavors are genuinely different codebases sharing a CLI, not just
+  # different package versions of the same thing (see DnfUpdateSession's
+  # own doc comment). A third real-world variant, bare legacy yum with no
+  # dnf binary at all, was verified once by hand instead of added here —
+  # its only freely available representative, CentOS 7, is EOL and its
+  # glibc/libstdc++ can't run the .NET SDK this job needs at all.
   dnf-integration-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: fedora
+            image: fedora:44
+          - name: rocky
+            image: rockylinux:9
     runs-on: ubuntu-latest
     continue-on-error: true
+    env:
+      UPDATEWATCH2_TEST_RPM_IMAGE: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Start throwaway Fedora test container
+      - name: Start throwaway ${{ matrix.name }} test container
         run: scripts/run-fedora-test-server.sh up
 
-      - name: Run dnf/yum integration tests inside the Fedora container
-        run: docker exec updatewatch2-fedora-test dotnet test --filter "Category=DnfIntegration"
+      - name: Run dnf/yum integration tests inside the ${{ matrix.name }} container
+        run: docker exec updatewatch2-rpm-test dotnet test --filter "Category=DnfIntegration"
 
-      - name: Stop throwaway Fedora test container
+      - name: Stop throwaway ${{ matrix.name }} test container
         if: always()
         run: scripts/run-fedora-test-server.sh down

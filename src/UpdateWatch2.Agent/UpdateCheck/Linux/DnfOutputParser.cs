@@ -12,11 +12,14 @@ namespace UpdateWatch2.Agent.UpdateCheck.Linux;
 /// preceding the list (not present in classic dnf/yum output), which this
 /// parser silently and correctly skips rather than mis-parsing, and a
 /// package version carrying an epoch prefix (e.g. <c>1:3.5.8-1.fc44</c>),
-/// which stays intact as a single opaque version token. A genuinely older
-/// classic-dnf/yum host's exact output has still not been captured for
-/// real — treat that specific shape as well-researched but not
-/// live-verified, the same caveat <see cref="DnfUpdateSession"/>'s own
-/// <c>yum</c> fallback branch now carries.
+/// which stays intact as a single opaque version token. Both classic
+/// dnf/yum's own output shapes have since been confirmed too (agent
+/// v1.0.29, see <see cref="DnfUpdateSession"/>'s own doc comment for the
+/// full story): classic <c>dnf4</c> (Rocky Linux 9) produces an even
+/// plainer shape than dnf5, no header line at all, and parsed cleanly;
+/// bare <c>yum</c> (CentOS 7, confirmed at the raw CLI level only — see
+/// <see cref="DnfUpdateSession"/>) matched too, including a real blank
+/// leading line, which this parser already handled correctly.
 /// </summary>
 public static partial class DnfOutputParser
 {

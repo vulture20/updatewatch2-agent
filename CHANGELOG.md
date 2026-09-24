@@ -11,6 +11,15 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.29] - 2026-09-24
+
+### Added
+
+- **Extended dnf/yum live verification to the two RPM-family variants v1.0.28 left open, at the user's explicit follow-up request ("Führe den CI-Job auch mal für die yum/RHEL-Variante aus").** RHEL itself needs a paid subscription and isn't freely pullable, so the user picked concrete free substitutes directly:
+  - **Classic `dnf4`** (Rocky Linux 9, an actively maintained, binary-compatible RHEL 9 clone): `dotnet-sdk-10.0` installed straight from Rocky's own AppStream repo (Red Hat officially packages .NET for RHEL 8/9, which Rocky mirrors — no extra Microsoft feed needed). The identical `DnfIntegrationTests` class, unmodified, ran for real and passed — `check-update`'s output shape (even plainer than dnf5's, no header line at all), `--downloadonly`, and both install modes all carry over unchanged. `scripts/run-fedora-test-server.sh` generalized (container renamed `updatewatch2-rpm-test`, image driven by `UPDATEWATCH2_TEST_RPM_IMAGE`) and `dnf-integration-test` became a `{fedora, rocky}` matrix job, mirroring `release.yml`'s own `linux-packages` matrix — Rocky is now a permanent second CI leg.
+  - **Bare `yum`** (`DnfUpdateSession.ResolveBinary()`'s literal fallback when no `dnf` binary exists — CentOS 7, the last freely available genuinely yum-only distro): confirmed only at the raw CLI level, not through the C# class — a concrete `GLIBCXX_3.4.20 not found` error means .NET 10 cannot run on CentOS 7's stock `libstdc++` at all, and a quick devtoolset/SCL workaround attempt hit the same dead-mirror problem CentOS 7's main repos have (EOL since mid-2024). What *was* confirmed for real, after pointing every repo at `vault.centos.org` by hand: `ResolveBinary()` correctly picks `"yum"`; real `yum -q check-update` output parsed 51/51 real pending packages correctly through `DnfOutputParser` (now a permanent test, `ParseCheckUpdate_parses_a_real_legacy_yum_check_update_sample_correctly`); the exact standalone `needs-restarting -r` command the `yum` branch invokes (not `yum needs-restarting -r`, which doesn't exist) worked; and a real scoped `yum -y update -- bash` installed successfully. Deliberately **not** part of the permanent CI matrix (EOL, can't run the SDK at all) — a one-off manual pass, findings preserved via the new parser test and doc comments.
+  - `DnfUpdateSession`/`DnfOutputParser`'s doc comments, both READMEs, and CLAUDE.md updated to match. Also fixed, in passing: `DnfIntegrationTests`' own comment incorrectly claimed the test script "deliberately seeds a guaranteed-pending update" — it never did; a freshly pulled Fedora/Rocky image just reliably has real pending updates already, confirmed in practice on both.
+
 ## [1.0.28] - 2026-09-24
 
 ### Added

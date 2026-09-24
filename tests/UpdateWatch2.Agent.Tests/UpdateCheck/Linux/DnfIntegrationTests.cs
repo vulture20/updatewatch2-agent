@@ -39,11 +39,25 @@ namespace UpdateWatch2.Agent.Tests.UpdateCheck.Linux;
 /// comments originally assumed — dnf5 is CLI-compatible for every command
 /// this codebase uses, and (unlike classic dnf/yum) bundles its own
 /// <c>needs_restarting</c> plugin, so <c>needs-restarting -r</c> worked with
-/// no extra package installed at all. A genuinely older/RHEL-family
-/// classic-dnf or bare-yum host (this class's <c>ResolveBinary()</c>'s own
-/// <c>yum</c> fallback branch) has still never been run for real — treat
-/// that specific branch as well-researched but not live-verified the same
-/// way the whole class used to be.
+/// no extra package installed at all.
+/// </para>
+///
+/// <para>
+/// Both remaining RPM-family variants have since been confirmed too
+/// (agent v1.0.29, at the user's explicit request): this exact class ran
+/// unmodified — no code change needed — against a real Rocky Linux 9
+/// container (classic <c>dnf4</c>, the "not dnf5" distinction the paragraph
+/// above left open) and passed identically, and Rocky is now a permanent
+/// second leg in the CI job's matrix alongside Fedora, via
+/// <c>UPDATEWATCH2_TEST_RPM_IMAGE</c>. The last variant — a host with no
+/// <c>dnf</c> binary at all, reaching <see cref="DnfUpdateSession.ResolveBinary"/>'s
+/// literal <c>yum</c> fallback — was confirmed against a real CentOS 7
+/// container, but only at the raw CLI level, not through this class: .NET
+/// 10 cannot run on CentOS 7's stock <c>libstdc++</c> at all (a concrete
+/// <c>GLIBCXX_3.4.20 not found</c> failure), and CentOS 7 is EOL anyway
+/// (frozen <c>vault.centos.org</c> repos), so it deliberately isn't part
+/// of the permanent CI matrix — see <see cref="ParseCheckUpdate_parses_a_real_legacy_yum_check_update_sample_correctly"/>
+/// for what real output that pass did capture.
 /// </para>
 /// </summary>
 [Trait("Category", "DnfIntegration")]
@@ -85,6 +99,31 @@ public class DnfIntegrationTests
         Assert.Equal("1:3.5.8-1.fc44", result[4].Version);
     }
 
+    [Fact]
+    public void ParseCheckUpdate_parses_a_real_legacy_yum_check_update_sample_correctly()
+    {
+        // Captured verbatim from `yum -q check-update` on a real CentOS 7
+        // container (bare yum, no dnf binary at all — ResolveBinary()'s
+        // literal "yum" fallback branch). Even plainer than dnf5's own
+        // shape: no section header at all, just a genuine leading blank
+        // line, which the parser already handled correctly before this.
+        const string realYumOutput = "\n" + """
+            bash.x86_64                         4.2.46-35.el7_9                       updates
+            ca-certificates.noarch              2023.2.60_v7.0.306-72.el7_9           updates
+            device-mapper.x86_64                7:1.02.170-6.el7_9.5                  updates
+            tzdata.noarch                       2024a-1.el7                           updates
+            """;
+
+        var result = DnfOutputParser.ParseCheckUpdate(realYumOutput);
+
+        Assert.Equal(4, result.Count);
+        Assert.Equal("bash", result[0].Package);
+        Assert.Equal("x86_64", result[0].Architecture);
+        Assert.Equal("4.2.46-35.el7_9", result[0].Version);
+        Assert.Equal("updates", result[0].Repository);
+        Assert.Equal("7:1.02.170-6.el7_9.5", result[2].Version);
+    }
+
     /// <summary>
     /// One comprehensive, deliberately sequential workflow test rather than
     /// several independent [Fact]s — every stage after the first mutates
@@ -110,11 +149,13 @@ public class DnfIntegrationTests
 
         if (initialSearch.Updates.Count == 0)
         {
-            // scripts/run-fedora-test-server.sh deliberately seeds a
-            // guaranteed-pending update, so this should not happen in
-            // practice — but if the container genuinely has nothing
-            // pending, there is nothing left to meaningfully assert about
-            // install behavior.
+            // A freshly pulled Fedora/Rocky image reliably has some real
+            // pending updates already (container images lag behind each
+            // distro's own continuously published updates) — confirmed in
+            // practice on both, so scripts/run-fedora-test-server.sh
+            // doesn't bother deliberately seeding one. If a container
+            // genuinely has nothing pending, though, there is nothing left
+            // to meaningfully assert about install behavior.
             return;
         }
 

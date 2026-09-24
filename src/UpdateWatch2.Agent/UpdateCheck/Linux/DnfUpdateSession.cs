@@ -11,7 +11,7 @@ namespace UpdateWatch2.Agent.UpdateCheck.Linux;
 ///
 /// <para>
 /// Live-verified end to end against a real Fedora 44 host (agent v1.0.28,
-/// via the throwaway Fedora container <c>scripts/run-fedora-test-server.sh</c>
+/// via the throwaway container <c>scripts/run-fedora-test-server.sh</c>
 /// stands up, exercised by <c>DnfIntegrationTests</c>): real <c>check-update</c>,
 /// standalone <c>needs-restarting -r</c>, <c>--downloadonly</c>, and both a
 /// scoped (selective) and a full <c>update</c> install all ran and behaved
@@ -22,11 +22,38 @@ namespace UpdateWatch2.Agent.UpdateCheck.Linux;
 /// CLI-compatible with every command this class uses and — unlike classic
 /// dnf/yum — bundles its own <c>needs_restarting</c> plugin, so
 /// <see cref="IsRebootRequiredAsync(CancellationToken)"/> worked with no
-/// extra package installed at all. This class's own <see cref="ResolveBinary"/>
-/// <c>yum</c> fallback (a genuinely older/classic-dnf or bare-yum RPM host)
-/// has still never been run for real — treat that specific branch as
-/// well-researched but not live-verified, the same honesty caveat the
-/// whole class used to carry.
+/// extra package installed at all.
+/// </para>
+/// <para>
+/// Both remaining branches have since been confirmed too (agent v1.0.29),
+/// at the user's explicit request. Classic <c>dnf4</c> — the "not dnf5"
+/// distinction the paragraph above left open — was run identically to the
+/// above against a real Rocky Linux 9 host (a RHEL 9 clone; RHEL itself
+/// needs a paid subscription and isn't freely pullable): the exact same
+/// <c>DnfIntegrationTests</c> class passed unmodified, confirming
+/// <c>check-update</c>'s output shape, exit codes, <c>--downloadonly</c>,
+/// and both install modes all carry over to the older codebase unchanged.
+/// Rocky 9 is now a permanent second leg in the CI job's matrix alongside
+/// Fedora. This class's own <see cref="ResolveBinary"/> literal <c>yum</c>
+/// fallback (a host with no <c>dnf</c> binary at all) was also confirmed —
+/// against a real CentOS 7 host, the last freely available distro that's
+/// genuinely yum-only — but only at the raw CLI level, not through this
+/// class's own C# code: CentOS 7's stock <c>libstdc++</c> is too old to run
+/// the .NET 10 runtime at all (a real, concrete <c>GLIBCXX_3.4.20 not
+/// found</c> failure, not a guess), and a quick attempt at a newer
+/// toolchain via CentOS 7's SCL repos hit the same dead-mirror problem
+/// its main repos have (see below) for a channel with no working vault
+/// mirror. What *was* confirmed directly: <c>ResolveBinary()</c> correctly
+/// resolves to <c>"yum"</c> on such a host; the real <c>yum -q check-update</c>
+/// output (an even simpler shape than dnf5's — no header line at all) was
+/// fed through the real <see cref="DnfOutputParser"/> and parsed
+/// perfectly; the exact standalone <c>needs-restarting -r</c> command this
+/// class's <c>yum</c> branch invokes (not <c>yum needs-restarting</c>) ran
+/// for real and correctly reported no reboot needed; and a real scoped
+/// <c>yum -y update -- bash</c> — the exact argument shape
+/// <see cref="BuildInstallArgs"/> builds — installed successfully. CentOS 7
+/// being EOL (frozen <c>vault.centos.org</c> repos, no working default
+/// mirrorlist) is why this variant isn't part of the permanent CI matrix.
 /// </para>
 /// </summary>
 [SupportedOSPlatform("linux")]
