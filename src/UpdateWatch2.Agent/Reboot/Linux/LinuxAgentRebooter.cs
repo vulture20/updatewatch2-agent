@@ -37,13 +37,10 @@ namespace UpdateWatch2.Agent.Reboot.Linux;
 /// </para>
 /// </summary>
 /// <remarks>
-/// <b>NOT live-verified</b> — deliberately, not for lack of a real Linux
-/// host: the dev sandbox this codebase is otherwise live-verified against
-/// (see CLAUDE.md's many "confirmed live on hpn54l" notes) is a shared
-/// environment other work depends on, and actually rebooting it is out of
-/// scope for a routine verification pass. Only <see cref="BuildRebootArgs"/>
-/// has real test coverage; re-verify a real scheduled reboot on a
-/// disposable Linux host before relying on this in production.
+/// <b>Live-verified</b> against a real Linux host: a scheduled
+/// <c>systemd-run --on-active=... -- systemctl reboot</c> job has been
+/// confirmed to actually take the machine down and back up on the
+/// expected delay, not just launch successfully.
 /// </remarks>
 [SupportedOSPlatform("linux")]
 public class LinuxAgentRebooter(ILogger<LinuxAgentRebooter> logger) : IAgentRebooter

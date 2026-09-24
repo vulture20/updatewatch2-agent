@@ -11,6 +11,15 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.27] - 2026-09-24
+
+### Fixed
+
+- **README/README.de/CLAUDE.md still listed Linux remote reboot scheduling as "not yet live-verified," which the user has since confirmed against a real Linux host.** No functional code changed — documentation-only, plus one doc-comment update:
+  - README/README.de's badge and Project status section reworded: remote reboot scheduling is now confirmed on both platforms (Windows' `shutdown.exe` and Linux's `systemd-run --on-active=... -- systemctl reboot`), removing it from the Linux "not yet" bullet entirely.
+  - CLAUDE.md's Remote reboot note updated to state both rebooters are confirmed, rather than only Windows'.
+  - `LinuxAgentRebooter`'s own doc comment — the one place in the codebase that explicitly said "NOT live-verified — deliberately... rebooting [the sandbox] is out of scope" — updated to state a real scheduled reboot has since been confirmed on a real Linux host.
+
 ## [1.0.26] - 2026-09-24
 
 ### Fixed
