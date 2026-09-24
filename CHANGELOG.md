@@ -11,6 +11,17 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.28] - 2026-09-24
+
+### Added
+
+- **Real dnf/yum live verification, closing `updatewatch2-agent#8`'s longest-standing gap (the RPM half of the real Linux update checker had never been run against a real dnf/yum host — this project's dev sandbox is Debian-based).** At the user's request, run against a real Fedora container:
+  - New `scripts/run-fedora-test-server.sh` (`up`/`down`), mirroring `updatewatch2-server`'s own `run-ldap-test-server.sh` — stands up a disposable Fedora container with a real .NET SDK installed via `dnf` inside it, since (unlike LDAP, a network protocol) `DnfUpdateSession` shells out locally, so the test process itself has to run inside the container to reach a genuine `dnf`.
+  - New `DnfIntegrationTests` (`[Trait("Category", "DnfIntegration")]`, excluded from the default `dotnet test` run the same way `ActiveDirectoryLdapIntegrationTests` excludes `LdapIntegration` server-side), run for real against a fresh container the new script creates: real `check-update`, standalone `needs-restarting -r`, `--downloadonly`, a scoped (selective) install, and a full install, plus `DnfOutputParser` against a real captured dnf5 sample — all passed.
+  - New `dnf-integration-test` CI job (`continue-on-error: true`, mirroring the server repo's `ldap-integration-test` job); the existing `test` job now excludes `Category=DnfIntegration`.
+  - **Finding, not a bug**: the Fedora host used (Fedora 44) ships dnf5 (Rust-based), not classic Python dnf/yum — `/usr/bin/dnf`/`/usr/bin/yum` are both symlinks to it. It's CLI-compatible with every command this codebase uses and, unlike classic dnf/yum, bundles its own `needs_restarting` plugin, so `IsRebootRequiredAsync` worked with no extra package installed. A genuinely older classic-dnf/bare-yum RPM host (`DnfUpdateSession.ResolveBinary()`'s `yum` fallback branch) has still never been run for real.
+  - `DnfUpdateSession`/`DnfOutputParser`'s own doc comments, and both READMEs, updated to state what's now live-verified — see also CLAUDE.md.
+
 ## [1.0.27] - 2026-09-24
 
 ### Fixed

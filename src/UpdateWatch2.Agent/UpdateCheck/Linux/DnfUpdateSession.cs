@@ -7,11 +7,27 @@ namespace UpdateWatch2.Agent.UpdateCheck.Linux;
 /// <summary>
 /// Real dnf/yum-based update checking for RPM-based distros — selected in
 /// Program.cs when <see cref="LinuxPackageManagerDetector"/> finds
-/// <c>dnf</c> or <c>yum</c> but not <c>apt-get</c>. See
-/// <see cref="DnfOutputParser"/>'s own doc comment for the honesty
-/// caveat: this whole class, including the install path, has NOT been
-/// live-verified against a real dnf/yum host — this project's dev
-/// sandbox is Debian-based and has neither tool installed.
+/// <c>dnf</c> or <c>yum</c> but not <c>apt-get</c>.
+///
+/// <para>
+/// Live-verified end to end against a real Fedora 44 host (agent v1.0.28,
+/// via the throwaway Fedora container <c>scripts/run-fedora-test-server.sh</c>
+/// stands up, exercised by <c>DnfIntegrationTests</c>): real <c>check-update</c>,
+/// standalone <c>needs-restarting -r</c>, <c>--downloadonly</c>, and both a
+/// scoped (selective) and a full <c>update</c> install all ran and behaved
+/// exactly as coded, including <c>needs-restarting -r</c> correctly flipping
+/// to "reboot required" after upgrading core system libraries. One thing
+/// worth knowing, not a bug: Fedora 44 ships dnf5 (Rust-based — both
+/// <c>/usr/bin/dnf</c> and <c>/usr/bin/yum</c> are symlinks to it), which is
+/// CLI-compatible with every command this class uses and — unlike classic
+/// dnf/yum — bundles its own <c>needs_restarting</c> plugin, so
+/// <see cref="IsRebootRequiredAsync(CancellationToken)"/> worked with no
+/// extra package installed at all. This class's own <see cref="ResolveBinary"/>
+/// <c>yum</c> fallback (a genuinely older/classic-dnf or bare-yum RPM host)
+/// has still never been run for real — treat that specific branch as
+/// well-researched but not live-verified, the same honesty caveat the
+/// whole class used to carry.
+/// </para>
 /// </summary>
 [SupportedOSPlatform("linux")]
 public class DnfUpdateSession(ILogger<DnfUpdateSession> logger, AgentOptions options) : ILinuxUpdateSession

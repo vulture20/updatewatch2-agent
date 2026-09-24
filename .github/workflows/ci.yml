@@ -19,6 +19,7 @@ on:
     paths:
       - "src/**"
       - "tests/**"
+      - "scripts/**"
       - "VERSION"
       - ".github/workflows/ci.yml"
   pull_request:
@@ -26,6 +27,7 @@ on:
     paths:
       - "src/**"
       - "tests/**"
+      - "scripts/**"
       - ".github/workflows/ci.yml"
 
 jobs:
@@ -36,4 +38,34 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
-      - run: dotnet test
+      # DnfIntegration-tagged tests need a real dnf/yum host — see the
+      # dedicated dnf-integration-test job below, mirroring how
+      # updatewatch2-server's own `test` job excludes `LdapIntegration`.
+      - run: dotnet test --filter "Category!=DnfIntegration"
+
+  # Real dnf/yum coverage for DnfUpdateSession/DnfOutputParser
+  # (updatewatch2-agent#8's own long-standing "not live-verified against a
+  # real dnf/yum host" gap) — deliberately its own job, not folded into
+  # `test` above, so standing up a whole second .NET SDK inside a Fedora
+  # container never slows down the fast path every ordinary push/PR
+  # already takes. continue-on-error: true so a flaky container start (or
+  # an actual regression here) never blocks the fast path — the same
+  # "don't let the newer, less-certain piece block the core pipeline"
+  # precedent this repo's own release.yml already established for its
+  # optional linux-packages job, and updatewatch2-server's docker-publish.yml
+  # established for its own ldap-integration-test job.
+  dnf-integration-test:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start throwaway Fedora test container
+        run: scripts/run-fedora-test-server.sh up
+
+      - name: Run dnf/yum integration tests inside the Fedora container
+        run: docker exec updatewatch2-fedora-test dotnet test --filter "Category=DnfIntegration"
+
+      - name: Stop throwaway Fedora test container
+        if: always()
+        run: scripts/run-fedora-test-server.sh down

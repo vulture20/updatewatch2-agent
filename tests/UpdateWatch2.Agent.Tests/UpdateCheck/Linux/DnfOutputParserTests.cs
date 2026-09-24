@@ -3,9 +3,11 @@ using UpdateWatch2.Agent.UpdateCheck.Linux;
 namespace UpdateWatch2.Agent.Tests.UpdateCheck.Linux;
 
 /// <summary>
-/// Unlike <c>AptOutputParserTests</c>, these fixtures are modeled on
-/// dnf/yum's documented output format, not captured from a real host —
-/// see <see cref="DnfOutputParser"/>'s own honesty caveat.
+/// These fixtures are still modeled on dnf/yum's documented output format
+/// rather than captured from a real host — for that, see
+/// <c>DnfIntegrationTests.ParseCheckUpdate_parses_a_real_dnf5_check_update_sample_correctly</c>,
+/// which exercises this same parser against genuine dnf5 output captured
+/// from a real Fedora host.
 /// </summary>
 public class DnfOutputParserTests
 {
