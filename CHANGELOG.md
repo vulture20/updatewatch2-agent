@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.31] - 2026-09-24
+
+### Fixed
+
+- **Documentation only: closed `updatewatch2-agent#9` for good, at the user's explicit follow-up request ("Schließe #9, indem du auch das x86_64-rpm-Paket real testest") — the one piece the arm64 packaging pass (v1.0.30) deliberately left open.** No emulation needed this time: a real self-contained `linux-x64` publish, packaged with the identical `fpm` invocation `release.yml` uses, was run natively (`docker run --platform linux/amd64`) against fresh Debian/Fedora containers. Confirmed for real, on both `.deb` and `.rpm`: a fresh install (files correct, `postinst.sh` seeds the config, the packaged binary actually starts and logs "Registration attempt failed" before a clean shutdown), a real upgrade correctly preserving an already-set `ServerAddress` (the exact `hpn54l` bug scenario), and a clean uninstall leaving `/etc/updatewatch2` behind. Same honest limitation as the arm64 pass: neither test image had a `systemctl` binary at all, so the packaging scripts' service-enable/start/stop branches remain unexercised outside the real production `hpn54l` host (`.deb` only — `.rpm` has still never run against a real systemd host). `updatewatch2-agent#9`'s literal scope (NSIS via `updatewatch2-agent#13`, `.deb`/`.rpm` install/upgrade/uninstall on both x86_64 and arm64) is now fully closed; the systemctl-branch gap and `updatewatch2-agent#24`'s separate Linux self-update *apply* mechanism remain open elsewhere.
+
 ## [1.0.30] - 2026-09-24
 
 ### Fixed
