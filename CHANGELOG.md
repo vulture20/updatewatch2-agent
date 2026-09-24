@@ -11,6 +11,17 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.33] - 2026-09-24
+
+### Fixed
+
+- **Implemented real outcome detection for Linux self-update, closing the actual bug behind `updatewatch2-agent#24`, at the user's explicit request ("Setze eine der beiden vorgeschlagenen Fixes in #24 um").** `LinuxPackageApplier.ApplyAsync` now uses `systemd-run --wait` (bounded by a new 10-minute timeout) instead of a fire-and-forget launch, so a genuine `dpkg`/`rpm` failure — an architecture mismatch, a held lock, an unauthenticated repository, ... — now correctly returns `false` and logs the real error (fetched via a post-hoc `journalctl -u <unit>.service --output=cat` call) instead of always silently claiming success.
+  - **A real technical finding, not assumed**: `--wait` cannot be combined with `--scope` (confirmed from this host's own `man systemd-run`) — the existing deadlock fix's `--scope` flag had to be dropped in favor of `systemd-run`'s default transient-*service* mode, which has the identical cgroup-detachment property for a different reason (PID 1 forks the process directly via D-Bus activation).
+  - **Two further real regressions caught by live-verifying in an isolated QEMU VM (not reasoned about) before landing on the final fix**: (1) a first version also added `--pipe` to capture the real error text live — this reintroduced a SIGPIPE variant of the original "donthack" deadlock (the `--pipe` relay dies with the agent's own service, corrupting an in-flight `dpkg` transaction; observed: package stuck half-installed, service dead) — fixed by dropping `--pipe` in favor of the post-hoc journal fetch. (2) even without `--pipe`, the `systemd-run` client process itself (a plain child of the agent) still gets SIGTERM'd by a genuinely *successful* install's own `prerm` stop, producing a false-negative exit code (143) despite the real install having succeeded — fixed by treating any exit code in the 128–192 signal-termination range as "inconclusive, presume applied" (a real package-manager failure never lands in that range).
+  - Live-verified clean, final pass: a genuine architecture mismatch correctly fails with real error detail now visible in this agent's own log; a genuine successful update correctly reports success with the real service ending up healthy on the new version.
+  - `LinuxPackageApplier`'s own doc comment keeps the full history (both regressions, not smoothed over). New `LinuxPackageApplierTests` coverage for the updated `systemd-run` argument shape (no `--scope`/`--pipe`, `--wait` present).
+  - `updatewatch2-agent#24` left open with this fix + evidence as a comment — closing it is left to the user's own decision.
+
 ## [1.0.32] - 2026-09-24
 
 ### Fixed
