@@ -11,6 +11,12 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.30] - 2026-09-24
+
+### Fixed
+
+- **Documentation only: closed the "install/upgrade through dpkg/rpm itself on an arm64 host is not verified" gap the arm64 Linux packages work (agent v1.0.19) left open — a one-off manual verification, at the user's explicit request, deliberately not a permanent CI job (asked explicitly, after seeing the results, whether it should be — the user chose not to).** This sandbox is x86_64 with no real arm64 hardware, but `docker run --privileged tonistiigi/binfmt --install arm64` registers a real QEMU `binfmt_misc` handler, confirmed working via `docker run --platform linux/arm64 ... uname -m` → `aarch64`. A real self-contained `linux-arm64` publish (confirmed genuine `ELF ... ARM aarch64` via `file`) was packaged with the identical `fpm` invocation `release.yml` uses, then run for real against QEMU-emulated Debian/Fedora arm64 containers: `dpkg -i`/`rpm -i` (fresh install, files land correctly, `postinst.sh` seeds the starter config), the real packaged binary actually starting and logging the same "Registration attempt failed" line the native CI smoke test checks for, a real upgrade (`dpkg -i` again / `rpm -U --force`) correctly preserving an already-set `ServerAddress` — the exact scenario the real `hpn54l` bug (v0.11.1) was about, now confirmed on arm64 too — and a clean `dpkg -r`/`rpm -e` uninstall preserving `/etc/updatewatch2`. **Explicitly not covered**: neither test image had `systemd` as PID 1, so `postinst.sh`/`prerm.sh`/`postrm.sh`'s `systemctl enable`/`start`/`stop` branches were never exercised, only the package-transaction-and-scripts-complete-without-error half — said plainly rather than glossed over. This is meaningfully weaker than the `linux-packages` job's own *native* (not emulated) arm64 smoke test, and both READMEs/CLAUDE.md say so explicitly rather than conflating the two.
+
 ## [1.0.29] - 2026-09-24
 
 ### Added
