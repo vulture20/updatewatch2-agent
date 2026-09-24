@@ -11,7 +11,13 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
-## [1.0.33] - 2026-09-24
+## [1.0.34] - 2026-09-24
+
+### Fixed
+
+- **Bug: `release.yml`'s own `test` job ran plain, unfiltered `dotnet test`, hitting the real `DnfIntegrationTests` on a plain `ubuntu-latest` runner with no `dnf`/`yum` at all — found by the v1.0.33 tag push itself failing outright, not by inspection.** When `dnf-integration-test`/`Category=DnfIntegration` was added (agent v1.0.28), `ci.yml`'s own `test` job correctly gained a `Category!=DnfIntegration` exclusion filter — `release.yml`'s separate, tag-triggered `test` job (a second, independent `dotnet test` call site) was missed. Consequence: pushing the `v1.0.33` tag failed this job immediately (`Win32Exception` trying to start `yum`), so `windows-installer`/`linux-packages`/`release` never ran and no GitHub Release was ever published for that tag. Fixed by adding the identical filter here too. The `v1.0.33` tag (which never had a corresponding release) was replaced by this version instead of being reused, since nothing had actually shipped under it.
+
+## [1.0.33] - 2026-09-24 (tag removed — release never published, see 1.0.34)
 
 ### Fixed
 

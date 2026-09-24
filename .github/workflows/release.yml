@@ -18,7 +18,14 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
-      - run: dotnet test
+      # DnfIntegration-tagged tests need a real dnf/yum host (see
+      # scripts/run-fedora-test-server.sh's own dnf-integration-test job in
+      # ci.yml) — this job's plain ubuntu-latest runner has neither, same
+      # reason ci.yml's own `test` job excludes them. Missed here originally
+      # (agent v1.0.33's own tag push failed this job for exactly that
+      # reason, with no release artifacts published as a result) since this
+      # is a second, separate `dotnet test` call site from ci.yml's.
+      - run: dotnet test --filter "Category!=DnfIntegration"
 
   # Cross-published from Linux — makensis runs fine on Linux, and
   # `dotnet publish -r <RID>` needs no Windows host, so this avoids a
