@@ -90,7 +90,7 @@ jobs:
         working-directory: installer/nsis
         run: makensis -DVERSION=${{ steps.version.outputs.value }} -DARCH=arm64 setup.nsi
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-installer
           path: installer/nsis/UpdateWatch2Agent-Setup-*.exe
@@ -245,13 +245,13 @@ jobs:
       # matrix.deb_arch (not matrix.rid) since that's the value both
       # resulting filenames actually embed (updatewatch2-agent_<version>_arm64.deb,
       # updatewatch2-agent-<version>-1.aarch64.rpm).
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-deb-${{ matrix.deb_arch }}
           path: dist/*.deb
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-rpm-${{ matrix.deb_arch }}
           path: dist/*.rpm
