@@ -11,6 +11,15 @@ numbers (server, agent, transfer protocol, DB schema), which evolve on
 their own schedules; a protocol bump is called out inline below where a
 change caused one, but this changelog isn't that changelog.
 
+## [1.0.35] - 2026-10-15
+
+### Fixed
+
+- **Bug: a scoped Windows update install could silently report "Succeeded" without ever actually installing anything — found by a real production report against Windows servers ("updates that supposedly installed successfully never came back"), not by inspection.** `WuaUpdateSession.DownloadAndInstall`'s selective-install path searches WUA for "not yet installed" updates matching the admin-selected KB(s) at install time; if **none** of them matched that fresh search, the original code unconditionally returned `Succeeded` — on the (false) assumption that "no longer offered" always means "already installed". In reality a requested KB commonly drops out of that search for other reasons too, most notably supersedence (a newer cumulative update replaces it, so WUA simply stops offering the old KB number) or a timing race with Windows' own native Automatic Updates client. Since the server trusts a reported `Succeeded` unconditionally and deletes the pending entry immediately (`UpdateService.AcknowledgeInstallAsync`/`RemoveJustInstalledItemsAsync`, server-side), and supersedence specifically guarantees the exact same KB will never be re-offered, the update disappeared from the admin UI permanently, with nothing ever actually installed.
+  - Fixed: that branch no longer assumes success. When specific KB(s) were requested and none matched the pending search, a second, explicit `IsInstalled=1` search now confirms whether they're genuinely already installed before reporting an outcome — only then is it `Succeeded`; otherwise `Failed`, naming exactly which KB(s) couldn't be confirmed, so the server neither deletes them nor shows a false "installed" status (a plain `Failed` also means no immediate re-check fires, leaving it to the next regular scheduled scan, same as any other failed install).
+  - The decision logic itself (`AmbiguousInstallResolver`) is extracted as a small, pure, testable type — mirroring `Linux.AptUpdateSession.BuildInstallArgs`'s own convention — since the surrounding COM search still can't be exercised on this project's Linux CI; real unit coverage added for it. The "install everything pending" (unscoped, `packageIds is null`) case is unaffected — `selected.Count == 0` there still unambiguously means nothing was pending at all.
+  - [Not live-verified against a real Windows Update Agent — same standing caveat the rest of `WuaUpdateSession` already carries; re-confirm with a real scoped install hitting a genuinely superseded KB before fully trusting this in production.]
+
 ## [1.0.34] - 2026-09-24
 
 ### Fixed

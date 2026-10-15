@@ -99,8 +99,54 @@ public class WuaUpdateSession(ILogger<WuaUpdateSession> logger) : IWindowsUpdate
 
         if (selected.Count == 0)
         {
-            logger.LogInformation("No pending Windows updates match what was requested to install.");
-            return new InstallResult(InstallOutcome.Succeeded);
+            if (packageIds is null)
+            {
+                // Nothing was pending in the first place — install
+                // everything was requested, and there was simply nothing
+                // to do. Unambiguous.
+                logger.LogInformation("No pending Windows updates match what was requested to install.");
+                return new InstallResult(InstallOutcome.Succeeded);
+            }
+
+            // A scoped install named specific KB(s), none of which the
+            // current "not yet installed" search found. This does NOT by
+            // itself mean they're already installed (see
+            // AmbiguousInstallResolver's own doc comment for why — most
+            // commonly supersedence or a race with Windows' own native
+            // Automatic Updates) — verify explicitly before reporting an
+            // outcome, rather than assuming success the way this branch
+            // used to.
+            logger.LogWarning(
+                "None of the requested KB(s) ({PackageIds}) matched the current set of pending Windows updates; verifying whether they're already installed before reporting an outcome.",
+                string.Join(',', packageIds));
+
+            dynamic verifySearcher = session.CreateUpdateSearcher();
+            ct.ThrowIfCancellationRequested();
+            logger.LogDebug("COM: Microsoft.Update.Session.CreateUpdateSearcher().Search(IsInstalled=1 and Type='Software') [verifying ambiguous selection]");
+            dynamic alreadyInstalled = verifySearcher.Search("IsInstalled=1 and Type='Software'").Updates;
+
+            var installedKbs = new HashSet<string>();
+            int alreadyInstalledCount = alreadyInstalled.Count;
+            for (var i = 0; i < alreadyInstalledCount; i++)
+            {
+                var kb = FirstKbArticleId(alreadyInstalled.Item(i));
+                if (kb is not null)
+                {
+                    installedKbs.Add(kb);
+                }
+            }
+
+            var ambiguousResult = AmbiguousInstallResolver.Resolve(packageIds, installedKbs);
+            if (ambiguousResult.Outcome == InstallOutcome.Succeeded)
+            {
+                logger.LogInformation("All requested KB(s) are already installed; reporting success without a new download/install cycle.");
+            }
+            else
+            {
+                logger.LogWarning("{ErrorDetail}", ambiguousResult.ErrorDetail);
+            }
+
+            return ambiguousResult;
         }
 
         dynamic toDownload = NewUpdateCollection();
